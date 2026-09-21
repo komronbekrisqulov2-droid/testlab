@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>TestLab — Savollar tahlili (Gemini AI)</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --surface: rgba(18, 24, 38, 0.85);
+      --surface-border: rgba(255, 255, 255, 0.08);
+      --surface-hover: rgba(30, 41, 59, 0.9);
+      --primary-start: #6366f1;
+      --primary-end: #a855f7;
+      --gemini-cyan: #06b6d4;
+      --accent: #38bdf8;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --radius-lg: 18px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+      --glass-blur: blur(16px);
+      --glow: 0 0 24px rgba(99, 102, 241, 0.25);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background: var(--bg);
+      background-image: 
+        radial-gradient(circle at 10% 15%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
+        radial-gradient(circle at 90% 85%, rgba(6, 182, 212, 0.12) 0%, transparent 45%);
+      background-attachment: fixed;
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding-bottom: 90px;
+    }
+
+    /* HEADER */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(9, 13, 22, 0.82);
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+      border-bottom: 1px solid var(--surface-border);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--primary-start), var(--gemini-cyan));
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 19px;
+      box-shadow: 0 4px 14px rgba(6, 182, 212, 0.3);
+    }
+
+    .brand-title {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      background: linear-gradient(135deg, #fff 40%, var(--gemini-cyan));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 16px 16px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* TEST INFO CARD */
+    .card {
+      background: var(--surface);
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--primary-start), var(--gemini-cyan), var(--primary-end));
+      opacity: 0.8;
+    }
+
+    .test-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .test-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.3;
+    }
+
+    .badge-code {
+      background: rgba(99, 102, 241, 0.15);
+      color: #a5b4fc;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .meta-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      text-align: center;
+    }
+
+    .meta-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 3px;
+    }
+
+    .meta-value {
+      font-size: 13px;
+      font-weight: 600;
+      color: #f1f5f9;
+      font-family: 'JetBrains Mono', monospace;
+      word-break: break-all;
+    }
+
+    /* MEDIA PREVIEW */
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #cbd5e1;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .media-scroll {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 6px;
+      scrollbar-width: thin;
+    }
+
+    .media-thumb {
+      flex: 0 0 110px;
+      height: 140px;
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      border: 1px solid var(--surface-border);
+      position: relative;
+      cursor: pointer;
+      background: #000;
+    }
+
+    .media-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 0.2s;
+    }
+
+    .media-thumb:hover img {
+      transform: scale(1.05);
+    }
+
+    .media-tag {
+      position: absolute;
+      bottom: 4px;
+      right: 4px;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      color: #fff;
+    }
+
+    /* GEMINI HERO BUTTON */
+    .ai-hero {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(6, 182, 212, 0.15));
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .ai-btn {
+      background: linear-gradient(135deg, #6366f1, #06b6d4);
+      color: #fff;
+      border: none;
+      padding: 14px 28px;
+      border-radius: 30px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      box-shadow: 0 6px 20px rgba(6, 182, 212, 0.35);
+      transition: all 0.2s ease;
+      width: 100%;
+      justify-content: center;
+      max-width: 380px;
+    }
+
+    .ai-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(6, 182, 212, 0.5);
+    }
+
+    .ai-btn:active {
+      transform: translateY(0);
+    }
+
+    .ai-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .ai-desc {
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.4;
+      max-width: 440px;
+    }
+
+    /* API KEY MODAL / TOGGLE */
+    .api-key-toggle {
+      font-size: 11px;
+      color: var(--gemini-cyan);
+      text-decoration: underline;
+      cursor: pointer;
+      background: none;
+      border: none;
+      margin-top: -4px;
+    }
+
+    .api-input-wrap {
+      display: none;
+      width: 100%;
+      max-width: 420px;
+      margin-top: 8px;
+    }
+
+    .api-input {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      color: #fff;
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* QUESTIONS LIST */
+    .solutions-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .q-card {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      transition: border-color 0.2s;
+    }
+
+    .q-card:focus-within {
+      border-color: var(--primary-start);
+      box-shadow: 0 0 16px rgba(99, 102, 241, 0.2);
+    }
+
+    .q-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .q-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .q-badge {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .q-textarea {
+      width: 100%;
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      color: #f8fafc;
+      font-size: 13px;
+      line-height: 1.5;
+      resize: vertical;
+      min-height: 68px;
+      font-family: inherit;
+    }
+
+    .q-textarea:focus {
+      outline: none;
+      border-color: var(--gemini-cyan);
+    }
+
+    /* BOTTOM BAR */
+    .bottom-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(9, 13, 22, 0.92);
+      backdrop-filter: var(--glass-blur);
+      -webkit-backdrop-filter: var(--glass-blur);
+      border-top: 1px solid var(--surface-border);
+      padding: 12px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 40;
+    }
+
+    .save-btn {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #fff;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 15px rgba(16, 185, 129, 0.35);
+      transition: all 0.2s;
+    }
+
+    .save-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(16, 185, 129, 0.45);
+    }
+
+    .save-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .status-text {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* MODAL PHOTO VIEWER */
+    .photo-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.92);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .photo-modal.active {
+      display: flex;
+    }
+
+    .photo-modal img {
+      max-width: 100%;
+      max-height: 90vh;
+      border-radius: 8px;
+      object-fit: contain;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: rgba(255, 255, 255, 0.2);
+      color: #fff;
+      border: none;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      font-size: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* TOAST */
+    .toast {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(30px);
+      background: #1e293b;
+      border: 1px solid var(--gemini-cyan);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 30px;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5);
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    /* SPINNER */
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">✨</div>
+      <div>
+        <div class="brand-title">Savollar Tahlili</div>
+        <div class="brand-sub">Google Gemini AI Integratsiyasi</div>
+      </div>
+    </div>
+    <div id="testBadge" class="badge-code">№—</div>
+  </header>
+
+  <div class="container">
+
+    <!-- TEST INFO -->
+    <div class="card">
+      <div class="test-header">
+        <div class="test-title" id="testTitle">Yuklanmoqda...</div>
+      </div>
+      <div class="meta-grid">
+        <div class="meta-box">
+          <div class="meta-label">Savollar</div>
+          <div class="meta-value" id="metaQuestions">—</div>
+        </div>
+        <div class="meta-box">
+          <div class="meta-label">Kalit</div>
+          <div class="meta-value" id="metaKey">—</div>
+        </div>
+        <div class="meta-box">
+          <div class="meta-label">Rasmlar</div>
+          <div class="meta-value" id="metaMedia">0 ta</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MEDIA CAROUSEL -->
+    <div class="card" id="mediaCard" style="display: none;">
+      <div class="section-title">
+        <span>🖼 Test varaqa rasmlari (ko'rish uchun bosing)</span>
+      </div>
+      <div class="media-scroll" id="mediaList"></div>
+    </div>
+
+    <!-- GEMINI GENERATE HERO -->
+    <div class="ai-hero">
+      <button class="ai-btn" id="generateBtn" onclick="generateAnalysis()">
+        <span id="btnIcon">✨</span>
+        <span id="btnText">Gemini AI bilan tahlil qilish</span>
+      </button>
+      <div class="ai-desc">
+        Test rasmlari va javob kaliti sun'iy intellektga uzatiladi. Gemini har bir savol uchun bosqichma-bosqich yechim tayyorlab beradi.
+      </div>
+      <button class="api-key-toggle" onclick="toggleApiKeyInput()">⚙️ Gemini API kaliti kiritish (ixtiyoriy)</button>
+      <div class="api-input-wrap" id="apiKeyWrap">
+        <input type="password" id="customApiKey" class="api-input" placeholder="AIzaSy... (bo'sh qolsa serverdagi kalit ishlatiladi)">
+      </div>
+    </div>
+
+    <!-- SOLUTIONS LIST -->
+    <div class="section-title">
+      <span>💡 Savollar yechimlari va izohlar (<span id="solutionsCount">0</span> ta)</span>
+    </div>
+
+    <div class="solutions-container" id="solutionsList">
+      <div style="text-align: center; padding: 30px 10px; color: var(--text-muted); font-size: 13px;">
+        Hozircha yechimlar mavjud emas.<br>
+        Yuqoridagi <b>«✨ Gemini AI bilan tahlil qilish»</b> tugmasini bosing!
+      </div>
+    </div>
+
+  </div>
+
+  <!-- BOTTOM BAR -->
+  <div class="bottom-bar">
+    <div class="status-text" id="statusText">Tayyor</div>
+    <button class="save-btn" id="saveBtn" onclick="saveExplanations()" disabled>
+      <span>📤 Yechimlarga biriktirish</span>
+    </button>
+  </div>
+
+  <!-- MODAL VIEWER -->
+  <div class="photo-modal" id="photoModal" onclick="closeModal()">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <img id="modalImg" src="" alt="Test Paper">
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast" id="toast">
+    <span id="toastIcon">✅</span>
+    <span id="toastMsg">Amal bajarildi</span>
+  </div>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      try { tg.enableClosingConfirmation(); } catch (e) {}
+    }
+
+    const testId = window.location.pathname.split("/").pop();
+    let testData = null;
+    let currentSolutions = {};
+
+    function showToast(msg, isError = false) {
+      const toast = document.getElementById("toast");
+      document.getElementById("toastMsg").innerText = msg;
+      document.getElementById("toastIcon").innerText = isError ? "⚠️" : "✅";
+      toast.style.borderColor = isError ? "var(--danger)" : "var(--gemini-cyan)";
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 3200);
+      if (tg?.HapticFeedback) {
+        tg.HapticFeedback.notificationOccurred(isError ? 'error' : 'success');
+      }
+    }
+
+    function toggleApiKeyInput() {
+      const wrap = document.getElementById("apiKeyWrap");
+      wrap.style.display = wrap.style.display === "block" ? "none" : "block";
+    }
+
+    async function loadTest() {
+      try {
+        const res = await fetch(`/api/analysis/${testId}`);
+        const data = await res.json();
+        if (data.error) {
+          showToast(data.error, true);
+          return;
+        }
+
+        testData = data;
+        document.getElementById("testTitle").innerText = data.title;
+        document.getElementById("testBadge").innerText = `№${data.number}`;
+        document.getElementById("metaQuestions").innerText = `${data.questionsCount} ta`;
+        document.getElementById("metaKey").innerText = data.answerKey ? data.answerKey.toUpperCase() : "—";
+        document.getElementById("metaMedia").innerText = `${data.media?.length || 0} ta`;
+
+        // Render Media
+        if (data.media && data.media.length > 0) {
+          document.getElementById("mediaCard").style.display = "block";
+          const mediaList = document.getElementById("mediaList");
+          mediaList.innerHTML = "";
+          data.media.forEach((m, idx) => {
+            const div = document.createElement("div");
+            div.className = "media-thumb";
+            div.innerHTML = `<img src="${m.url}" alt="Varaqa ${idx+1}"><div class="media-tag">${idx+1}-varaqa</div>`;
+            div.onclick = () => openModal(m.url);
+            mediaList.appendChild(div);
+          });
+        }
+
+        // Render Existing Solutions
+        if (data.explanations && Object.keys(data.explanations).length > 0) {
+          currentSolutions = data.explanations;
+          renderSolutions();
+          document.getElementById("saveBtn").disabled = false;
+        } else {
+          // Initialize empty cards
+          initEmptyCards(data.questionsCount, data.answerKey);
+        }
+
+      } catch (err) {
+        showToast("Ma'lumotlarni yuklashda xatolik: " + err, true);
+      }
+    }
+
+    function initEmptyCards(qCount, key) {
+      currentSolutions = {};
+      const keyStr = (key || "").toUpperCase();
+      for (let i = 1; i <= qCount; i++) {
+        currentSolutions[i] = {
+          question: i,
+          answer: keyStr[i - 1] || "?",
+          explanation: ""
+        };
+      }
+      renderSolutions();
+    }
+
+    function renderSolutions() {
+      const container = document.getElementById("solutionsList");
+      container.innerHTML = "";
+      const keys = Object.keys(currentSolutions).sort((a, b) => Number(a) - Number(b));
+      
+      let filled = 0;
+      keys.forEach(qNum => {
+        const item = currentSolutions[qNum];
+        if (item.explanation && item.explanation.trim()) filled++;
+
+        const card = document.createElement("div");
+        card.className = "q-card";
+        card.innerHTML = `
+          <div class="q-header">
+            <div class="q-title">
+              <span>❓ ${qNum}-savol</span>
+              <span class="q-badge">Javob: ${item.answer || '?'}</span>
+            </div>
+            <span style="font-size: 11px; color: var(--text-muted);">${item.explanation ? '✍️ Yechim kiritilgan' : 'Bo\'sh'}</span>
+          </div>
+          <textarea class="q-textarea" placeholder="${qNum}-savol yechimi va tushuntirishi..." oninput="updateExplanation(${qNum}, this.value)">${item.explanation || ''}</textarea>
+        `;
+        container.appendChild(card);
+      });
+
+      document.getElementById("solutionsCount").innerText = `${filled}/${keys.length}`;
+      document.getElementById("statusText").innerText = `${filled} ta savol tayyor`;
+      if (filled > 0) {
+        document.getElementById("saveBtn").disabled = false;
+      }
+    }
+
+    function updateExplanation(qNum, text) {
+      if (currentSolutions[qNum]) {
+        currentSolutions[qNum].explanation = text;
+        const keys = Object.keys(currentSolutions);
+        let filled = 0;
+        keys.forEach(k => {
+          if (currentSolutions[k].explanation && currentSolutions[k].explanation.trim()) filled++;
+        });
+        document.getElementById("solutionsCount").innerText = `${filled}/${keys.length}`;
+        document.getElementById("saveBtn").disabled = filled === 0;
+      }
+    }
+
+    async function generateAnalysis() {
+      const btn = document.getElementById("generateBtn");
+      const btnText = document.getElementById("btnText");
+      const btnIcon = document.getElementById("btnIcon");
+      const customKey = document.getElementById("customApiKey").value.trim();
+
+      btn.disabled = true;
+      btnIcon.innerHTML = `<div class="spinner"></div>`;
+      btnText.innerText = "Gemini tahlil qilmoqda (10-20 soniya)...";
+      document.getElementById("statusText").innerText = "✨ AI yechimlarni yozmoqda...";
+
+      try {
+        const res = await fetch(`/api/analysis/${testId}/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKey: customKey })
+        });
+        const data = await res.json();
+
+        if (!data.ok) {
+          showToast(data.error || "Gemini tahlilida xatolik yuz berdi", true);
+          return;
+        }
+
+        if (data.solutions && Array.isArray(data.solutions)) {
+          data.solutions.forEach(sol => {
+            const q = sol.question;
+            if (currentSolutions[q]) {
+              currentSolutions[q].explanation = sol.explanation;
+              if (sol.answer) currentSolutions[q].answer = sol.answer;
+            } else {
+              currentSolutions[q] = {
+                question: q,
+                answer: sol.answer || "",
+                explanation: sol.explanation || ""
+              };
+            }
+          });
+
+          renderSolutions();
+          showToast("✨ Gemini barcha yechimlarni muvaffaqiyatli tayyorladi!");
+          document.getElementById("saveBtn").disabled = false;
+        }
+
+      } catch (err) {
+        showToast("Aloqa xatosi: " + err, true);
+      } finally {
+        btn.disabled = false;
+        btnIcon.innerText = "✨";
+        btnText.innerText = "Gemini AI bilan qayta tahlil qilish";
+      }
+    }
+
+    async function saveExplanations() {
+      const saveBtn = document.getElementById("saveBtn");
+      saveBtn.disabled = true;
+      saveBtn.innerText = "Saqlanmoqda...";
+
+      try {
+        const payload = {
+          solutions: Object.values(currentSolutions).map(s => ({
+            question: s.question,
+            explanation: s.explanation || "",
+            answer: s.answer || ""
+          }))
+        };
+
+        const res = await fetch(`/api/analysis/${testId}/save`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.ok) {
+          showToast(`✅ ${data.saved_count} ta savol yechimlari bazaga biriktirildi!`);
+          document.getElementById("statusText").innerText = `✅ Bazada saqlandi (${data.saved_count} ta)`;
+          if (tg) {
+            setTimeout(() => {
+              tg.close();
+            }, 1800);
+          }
+        } else {
+          showToast(data.error || "Saqlashda xatolik", true);
+        }
+
+      } catch (err) {
+        showToast("Saqlashda xatolik: " + err, true);
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = "<span>📤 Yechimlarga biriktirish</span>";
+      }
+    }
+
+    function openModal(url) {
+      document.getElementById("modalImg").src = url;
+      document.getElementById("photoModal").classList.add("active");
+    }
+
+    function closeModal() {
+      document.getElementById("photoModal").classList.remove("active");
+    }
+
+    window.addEventListener("DOMContentLoaded", loadTest);
+  </script>
+</body>
+</html>

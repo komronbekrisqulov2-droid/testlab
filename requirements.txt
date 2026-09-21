@@ -1,0 +1,34 @@
+# ==========================================================
+#  TestLab — Python bog'liqliklari
+#  O'rnatish:  pip install -r requirements.txt
+# ==========================================================
+
+# --- Telegram bot ---
+aiogram==3.15.0
+
+# --- Ma'lumotlar bazasi (async) ---
+SQLAlchemy[asyncio]==2.0.36
+alembic==1.14.0
+aiosqlite==0.20.0          # mahalliy ishlab chiqish uchun
+asyncpg==0.30.0            # PostgreSQL — production
+
+# --- Konfiguratsiya va validatsiya ---
+# DIQQAT: pydantic versiyasini aiogram belgilaydi — u `pydantic<2.10` talab
+# qiladi. Yuqoriroq versiyaga ko'tarsangiz o'rnatish to'qnashuv bilan
+# to'xtaydi. aiogram yangilanganda ikkalasini birga ko'taring.
+pydantic==2.9.2
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+
+# --- Kesh, FSM, rate limiting (ixtiyoriy: bo'lmasa xotira rejimi) ---
+redis==5.2.0
+
+# --- Rasm generatsiyasi (natija kartochkasi, sertifikat) ---
+Pillow==11.0.0
+qrcode==8.0
+
+# --- Excel hisobotlari ---
+openpyxl==3.1.5
+
+# --- Fon vazifalari ---
+APScheduler==3.11.0

@@ -1,0 +1,1038 @@
+﻿<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>TestLab — Interaktiv Test Yechish</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: var(--tg-theme-bg-color, #0b1120);
+      --card-bg: var(--tg-theme-secondary-bg-color, #1e293b);
+      --text: var(--tg-theme-text-color, #f8fafc);
+      --hint: var(--tg-theme-hint-color, #94a3b8);
+      --primary: var(--tg-theme-button-color, #3b82f6);
+      --primary-text: var(--tg-theme-button-text-color, #ffffff);
+      --border: rgba(255, 255, 255, 0.08);
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --radius: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* Top Bar */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .header-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .test-title {
+      font-size: 16px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 65%;
+      letter-spacing: -0.2px;
+    }
+
+    .timer-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(59, 130, 246, 0.15);
+      color: #60a5fa;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.5px;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .timer-badge.warning {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--danger);
+      border-color: rgba(239, 68, 68, 0.4);
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3b82f6, #10b981);
+      width: 0%;
+      transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Main Content */
+    main {
+      flex: 1;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-width: 600px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* Test Image Card */
+    .image-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      position: relative;
+      cursor: pointer;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+      transition: transform 0.2s ease;
+    }
+
+    .image-card:active {
+      transform: scale(0.99);
+    }
+
+    .image-preview-wrapper {
+      max-height: 240px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0f172a;
+      position: relative;
+    }
+
+    .image-preview-img {
+      width: 100%;
+      height: auto;
+      object-fit: contain;
+      display: block;
+    }
+
+    .image-zoom-overlay {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(8px);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .image-page-indicator {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(8px);
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+    }
+
+    /* Question & Option Card */
+    .question-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+    }
+
+    .question-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .q-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(59, 130, 246, 0.12);
+      color: #60a5fa;
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      padding: 6px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(59, 130, 246, 0.25);
+    }
+
+    .flag-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--hint);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s;
+    }
+
+    .flag-btn.active {
+      background: rgba(245, 158, 11, 0.2);
+      border-color: var(--warning);
+      color: var(--warning);
+    }
+
+    /* Options */
+    .options-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .option-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 18px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .option-item:active {
+      transform: scale(0.98);
+    }
+
+    .option-letter {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 15px;
+      color: var(--text);
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .option-text {
+      font-size: 15px;
+      font-weight: 600;
+      flex: 1;
+    }
+
+    .option-check {
+      display: none;
+      font-size: 18px;
+    }
+
+    .option-item.selected {
+      background: rgba(59, 130, 246, 0.18);
+      border-color: var(--primary);
+      box-shadow: 0 0 15px rgba(59, 130, 246, 0.2);
+    }
+
+    .option-item.selected .option-letter {
+      background: var(--primary);
+      color: var(--primary-text);
+      box-shadow: 0 0 12px rgba(59, 130, 246, 0.5);
+    }
+
+    .option-item.selected .option-check {
+      display: block;
+      color: #60a5fa;
+    }
+
+    /* Bottom Bar */
+    footer {
+      position: sticky;
+      bottom: 0;
+      z-index: 50;
+      background: rgba(30, 41, 59, 0.9);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .nav-btn {
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-weight: 700;
+      font-size: 14px;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+
+    .nav-btn:active {
+      transform: scale(0.97);
+    }
+
+    .nav-btn.secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+    }
+
+    .nav-btn.primary {
+      background: var(--primary);
+      color: var(--primary-text);
+      min-width: 120px;
+    }
+
+    .nav-btn.finish {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #fff;
+      box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+      min-width: 140px;
+    }
+
+    .grid-toggle-btn {
+      width: 46px;
+      height: 46px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .grid-toggle-badge {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      background: var(--primary);
+      color: #fff;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 10px;
+      border: 2px solid var(--card-bg);
+    }
+
+    /* Modal Backdrop */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      z-index: 100;
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+      transition: opacity 0.2s;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    /* Matrix Drawer */
+    .drawer-content {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 24px 24px 0 0;
+      padding: 24px 20px 34px;
+      width: 100%;
+      max-width: 600px;
+      max-height: 80vh;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.5);
+      animation: slideUp 0.25s ease-out;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+
+    .drawer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .drawer-header h3 {
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+    }
+
+    .matrix-item {
+      aspect-ratio: 1;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.2s;
+    }
+
+    .matrix-item:active {
+      transform: scale(0.92);
+    }
+
+    .matrix-item.answered {
+      background: rgba(59, 130, 246, 0.2);
+      border-color: var(--primary);
+      color: #60a5fa;
+    }
+
+    .matrix-item.current {
+      box-shadow: 0 0 0 2px var(--primary);
+    }
+
+    .matrix-item.flagged::after {
+      content: '🚩';
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      font-size: 10px;
+    }
+
+    .matrix-letter {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--primary-text);
+      background: var(--primary);
+      padding: 1px 6px;
+      border-radius: 8px;
+      margin-top: 2px;
+    }
+
+    /* Fullscreen Image Modal */
+    .image-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.92);
+      backdrop-filter: blur(12px);
+      z-index: 150;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 16px;
+    }
+
+    .image-modal-backdrop.open {
+      display: flex;
+    }
+
+    .image-modal-header {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .image-modal-body {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      overflow: hidden;
+      touch-action: pinch-zoom;
+    }
+
+    .image-modal-img {
+      max-width: 100%;
+      max-height: 75vh;
+      object-fit: contain;
+      border-radius: 8px;
+    }
+
+    /* Confirm Modal */
+    .confirm-modal {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 24px;
+      margin: auto 16px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      animation: scaleUp 0.2s ease-out;
+    }
+
+    @keyframes scaleUp {
+      from { transform: scale(0.92); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Bar -->
+  <header>
+    <div class="header-top">
+      <div class="test-title" id="testTitle">Yuklanmoqda...</div>
+      <div class="timer-badge" id="timerBadge">
+        <span>⏱</span> <span id="timerText">--:--</span>
+      </div>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+  </header>
+
+  <!-- Main Question View -->
+  <main>
+    <!-- Test Image Container (if media available) -->
+    <div class="image-card" id="imageCard" style="display: none;" onclick="openImageModal()">
+      <div class="image-preview-wrapper">
+        <img src="" id="imagePreview" class="image-preview-img" alt="Test savollari">
+        <div class="image-page-indicator" id="imagePageIndicator">Sahifa 1 / 1</div>
+        <div class="image-zoom-overlay">🔍 Kattalashtirish</div>
+      </div>
+    </div>
+
+    <!-- Question Interaction Card -->
+    <div class="question-card">
+      <div class="question-header">
+        <div class="q-badge" id="qBadge">SAVOL 1 / 5</div>
+        <button class="flag-btn" id="flagBtn" onclick="toggleFlag()">
+          <span>🚩</span> <span id="flagText">Belgilash</span>
+        </button>
+      </div>
+
+      <div class="options-grid" id="optionsList">
+        <!-- Dynamic Option Items -->
+      </div>
+    </div>
+  </main>
+
+  <!-- Bottom Navigation Bar -->
+  <footer>
+    <button class="nav-btn secondary" id="prevBtn" onclick="prevQuestion()">◀️ Oldingi</button>
+    <button class="grid-toggle-btn" onclick="openMatrixModal()" title="Barcha savollar">
+      📊
+      <span class="grid-toggle-badge" id="answeredBadge">0</span>
+    </button>
+    <button class="nav-btn primary" id="nextBtn" onclick="nextQuestion()">Keyingi ▶️</button>
+    <button class="nav-btn finish" id="finishBtn" onclick="openFinishConfirm()" style="display: none;">Yakunlash ✅</button>
+  </footer>
+
+  <!-- Matrix Drawer Modal -->
+  <div class="modal-backdrop" id="matrixModal" onclick="closeMatrixModal(event)">
+    <div class="drawer-content" onclick="event.stopPropagation()">
+      <div class="drawer-header">
+        <h3>Savollar matritsasi</h3>
+        <button class="flag-btn" onclick="closeMatrixModal()">✖️ Yopish</button>
+      </div>
+      <div class="matrix-grid" id="matrixGrid">
+        <!-- Matrix items generated dynamically -->
+      </div>
+      <button class="nav-btn finish" onclick="closeMatrixModal(); openFinishConfirm();" style="width: 100%; padding: 14px;">
+        Testni yakunlash va topshirish
+      </button>
+    </div>
+  </div>
+
+  <!-- Fullscreen Image Viewer Modal -->
+  <div class="image-modal-backdrop" id="imageModal">
+    <div class="image-modal-header">
+      <span id="modalImageTitle">Savollar varaqasi</span>
+      <button class="flag-btn" onclick="closeImageModal()" style="color: #fff; border-color: rgba(255,255,255,0.3);">✖️ Yopish</button>
+    </div>
+    <div class="image-modal-body">
+      <img src="" id="modalFullImg" class="image-modal-img" alt="Kattalashtirilgan test rasmi">
+    </div>
+    <div style="width: 100%; display: flex; justify-content: center; gap: 12px;">
+      <button class="nav-btn secondary" id="prevImgBtn" onclick="changeImage(-1)" style="display: none;">◀️ Oldingi rasm</button>
+      <button class="nav-btn primary" onclick="closeImageModal()">Savolga qaytish ↩️</button>
+      <button class="nav-btn secondary" id="nextImgBtn" onclick="changeImage(1)" style="display: none;">Keyingi rasm ▶️</button>
+    </div>
+  </div>
+
+  <!-- Finish Confirmation Modal -->
+  <div class="modal-backdrop" id="confirmModal" style="align-items: center;">
+    <div class="confirm-modal" onclick="event.stopPropagation()">
+      <div style="font-size: 44px;">🎯</div>
+      <h3>Testni yakunlaysizmi?</h3>
+      <p id="confirmSummary" style="color: var(--hint); font-size: 14px; line-height: 1.6;"></p>
+      <div style="display: flex; gap: 10px; margin-top: 6px;">
+        <button class="nav-btn secondary" onclick="closeConfirmModal()" style="flex: 1;">Bekor qilish</button>
+        <button class="nav-btn finish" onclick="submitTest()" style="flex: 1;">Ha, topshirish</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+      tg.expand();
+      tg.enableClosingConfirmation();
+    }
+
+    // Holat
+    let testData = {
+      id: 1,
+      number: 1,
+      title: "Test",
+      questionsCount: 5,
+      optionsCount: 4,
+      timeLimitSec: 0,
+      media: []
+    };
+
+    let currentIndex = 0;
+    let currentImageIndex = 0;
+    let answers = {}; // index -> 'A', 'B', etc.
+    let flags = {};   // index -> true/false
+    let timerInterval = null;
+    let timeLeft = 0;
+
+    // URL dan testId ni aniqlash
+    const urlParams = new URLSearchParams(window.location.search);
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    const lastPart = pathParts[pathParts.length - 1];
+    const testId = (lastPart && !isNaN(lastPart)) ? lastPart : (urlParams.get('test') || '1');
+
+    async function loadTest() {
+      try {
+        const res = await fetch(`/api/test/${testId}`);
+        if (res.ok) {
+          testData = await res.json();
+        } else {
+          testData.title = urlParams.get('title') || "Test #" + testId;
+          testData.questionsCount = parseInt(urlParams.get('count') || "5");
+          testData.optionsCount = 4;
+          testData.timeLimitSec = parseInt(urlParams.get('time') || "0");
+        }
+      } catch (e) {
+        testData.title = "Test #" + testId;
+        testData.questionsCount = parseInt(urlParams.get('count') || "5");
+        testData.optionsCount = 4;
+        testData.timeLimitSec = parseInt(urlParams.get('time') || "0");
+      }
+
+      initTest();
+    }
+
+    function initTest() {
+      document.getElementById('testTitle').textContent = testData.title;
+      timeLeft = testData.timeLimitSec;
+
+      if (timeLeft > 0) {
+        startTimer();
+      } else {
+        document.getElementById('timerText').textContent = "Cheksiz";
+      }
+
+      // Media (rasm) bormi?
+      if (testData.media && testData.media.length > 0) {
+        document.getElementById('imageCard').style.display = 'block';
+        updateMediaDisplay();
+      }
+
+      renderQuestion();
+      renderMatrix();
+    }
+
+    function updateMediaDisplay() {
+      if (!testData.media || testData.media.length === 0) return;
+      const mediaItem = testData.media[currentImageIndex];
+      const imgUrl = mediaItem.url;
+      document.getElementById('imagePreview').src = imgUrl;
+      document.getElementById('modalFullImg').src = imgUrl;
+      
+      const count = testData.media.length;
+      document.getElementById('imagePageIndicator').textContent = `Sahifa ${currentImageIndex + 1} / ${count}`;
+      document.getElementById('modalImageTitle').textContent = `Savollar varaqasi (${currentImageIndex + 1}/${count})`;
+
+      const prevBtn = document.getElementById('prevImgBtn');
+      const nextBtn = document.getElementById('nextImgBtn');
+      if (count > 1) {
+        prevBtn.style.display = 'block';
+        nextBtn.style.display = 'block';
+        prevBtn.disabled = currentImageIndex === 0;
+        nextBtn.disabled = currentImageIndex === count - 1;
+      } else {
+        prevBtn.style.display = 'none';
+        nextBtn.style.display = 'none';
+      }
+    }
+
+    function changeImage(delta) {
+      if (!testData.media) return;
+      const newIdx = currentImageIndex + delta;
+      if (newIdx >= 0 && newIdx < testData.media.length) {
+        currentImageIndex = newIdx;
+        updateMediaDisplay();
+      }
+    }
+
+    function openImageModal() {
+      document.getElementById('imageModal').classList.add('open');
+    }
+
+    function closeImageModal() {
+      document.getElementById('imageModal').classList.remove('open');
+    }
+
+    function startTimer() {
+      updateTimerDisplay();
+      timerInterval = setInterval(() => {
+        timeLeft--;
+        updateTimerDisplay();
+        if (timeLeft <= 0) {
+          clearInterval(timerInterval);
+          alert("Vaqt tugadi! Natijangiz topshiriladi.");
+          submitTest();
+        }
+      }, 1000);
+    }
+
+    function updateTimerDisplay() {
+      const mins = Math.floor(timeLeft / 60);
+      const secs = timeLeft % 60;
+      const formatted = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+      const badge = document.getElementById('timerBadge');
+      document.getElementById('timerText').textContent = formatted;
+
+      if (timeLeft <= 300 && timeLeft > 0) {
+        badge.classList.add('warning');
+      }
+    }
+
+    function renderQuestion() {
+      const qNum = currentIndex + 1;
+      document.getElementById('qBadge').textContent = `SAVOL ${qNum} / ${testData.questionsCount}`;
+      
+      const flagBtn = document.getElementById('flagBtn');
+      if (flags[currentIndex]) {
+        flagBtn.classList.add('active');
+        document.getElementById('flagText').textContent = "Belgilangan";
+      } else {
+        flagBtn.classList.remove('active');
+        document.getElementById('flagText').textContent = "Belgilash";
+      }
+
+      // Variantlar soni (4 ta: A, B, C, D yoki 5 ta: A, B, C, D, E)
+      const maxOptions = testData.optionsCount || 4;
+      const allLetters = ['A', 'B', 'C', 'D', 'E', 'F'];
+      const options = allLetters.slice(0, maxOptions);
+
+      const container = document.getElementById('optionsList');
+      container.innerHTML = '';
+
+      options.forEach(letter => {
+        const isSelected = answers[currentIndex] === letter;
+        const div = document.createElement('div');
+        div.className = `option-item ${isSelected ? 'selected' : ''}`;
+        div.onclick = () => selectOption(letter);
+        div.innerHTML = `
+          <div class="option-letter">${letter}</div>
+          <div class="option-text">${letter} varianti</div>
+          <div class="option-check">✓</div>
+        `;
+        container.appendChild(div);
+      });
+
+      // Tugmalar holati
+      document.getElementById('prevBtn').style.visibility = currentIndex === 0 ? 'hidden' : 'visible';
+      
+      const isLast = currentIndex === testData.questionsCount - 1;
+      document.getElementById('nextBtn').style.display = isLast ? 'none' : 'flex';
+      document.getElementById('finishBtn').style.display = isLast ? 'flex' : 'none';
+
+      // Progress bar & Badge
+      const answeredCount = Object.keys(answers).length;
+      document.getElementById('answeredBadge').textContent = `${answeredCount}/${testData.questionsCount}`;
+      const pct = Math.round((answeredCount / testData.questionsCount) * 100);
+      document.getElementById('progressFill').style.width = pct + '%';
+    }
+
+    function selectOption(letter) {
+      if (tg?.HapticFeedback) {
+        tg.HapticFeedback.impactOccurred('light');
+      }
+
+      if (answers[currentIndex] === letter) {
+        delete answers[currentIndex];
+      } else {
+        answers[currentIndex] = letter;
+        // Keyingi savolga ravon o'tish (oxirgi savoldan tashqari)
+        if (currentIndex < testData.questionsCount - 1) {
+          setTimeout(() => {
+            currentIndex++;
+            renderQuestion();
+            renderMatrix();
+          }, 240);
+        }
+      }
+
+      renderQuestion();
+      renderMatrix();
+    }
+
+    function toggleFlag() {
+      flags[currentIndex] = !flags[currentIndex];
+      renderQuestion();
+      renderMatrix();
+    }
+
+    function prevQuestion() {
+      if (currentIndex > 0) {
+        currentIndex--;
+        renderQuestion();
+        renderMatrix();
+      }
+    }
+
+    function nextQuestion() {
+      if (currentIndex < testData.questionsCount - 1) {
+        currentIndex++;
+        renderQuestion();
+        renderMatrix();
+      }
+    }
+
+    function renderMatrix() {
+      const grid = document.getElementById('matrixGrid');
+      grid.innerHTML = '';
+
+      for (let i = 0; i < testData.questionsCount; i++) {
+        const item = document.createElement('div');
+        const isAnswered = !!answers[i];
+        const isCurrent = i === currentIndex;
+        const isFlagged = !!flags[i];
+
+        item.className = `matrix-item ${isAnswered ? 'answered' : ''} ${isCurrent ? 'current' : ''} ${isFlagged ? 'flagged' : ''}`;
+        item.onclick = () => {
+          currentIndex = i;
+          renderQuestion();
+          renderMatrix();
+          closeMatrixModal();
+        };
+
+        item.innerHTML = `
+          <span>${i + 1}</span>
+          ${isAnswered ? `<span class="matrix-letter">${answers[i]}</span>` : ''}
+        `;
+        grid.appendChild(item);
+      }
+    }
+
+    function openMatrixModal() {
+      document.getElementById('matrixModal').classList.add('open');
+    }
+
+    function closeMatrixModal(e) {
+      document.getElementById('matrixModal').classList.remove('open');
+    }
+
+    function openFinishConfirm() {
+      const total = testData.questionsCount;
+      const answered = Object.keys(answers).length;
+      const unanswered = total - answered;
+
+      document.getElementById('confirmSummary').innerHTML = `
+        Jami: <b>${total} ta</b> savol<br>
+        ✅ Belgilandi: <b>${answered} ta</b><br>
+        ${unanswered > 0 ? `⚠️ Belgilanmadi: <b style="color:var(--danger)">${unanswered} ta</b>` : '🎉 Barcha savollar belgilandi!'}
+      `;
+      document.getElementById('confirmModal').classList.add('open');
+    }
+
+    function closeConfirmModal() {
+      document.getElementById('confirmModal').classList.remove('open');
+    }
+
+    async function submitTest() {
+      let resultKey = "";
+      for (let i = 0; i < testData.questionsCount; i++) {
+        resultKey += (answers[i] || "-").toLowerCase();
+      }
+
+      const confirmModal = document.getElementById('confirmModal');
+      const modalBox = confirmModal.querySelector('.confirm-modal');
+      modalBox.innerHTML = `
+        <div style="font-size: 42px; animation: pulse 1s infinite;">⏳</div>
+        <h3>Natijangiz hisoblanmoqda...</h3>
+        <p style="color: var(--hint); font-size: 14px;">Iltimos, kuting.</p>
+      `;
+
+      try {
+        const payload = {
+          answers: resultKey,
+          user_id: tg?.initDataUnsafe?.user?.id || null,
+          init_data: tg?.initData || ""
+        };
+
+        const res = await fetch(`/api/test/${testData.id}/submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (res.ok && data.ok) {
+          if (timerInterval) clearInterval(timerInterval);
+
+          if (data.already_answered) {
+            modalBox.innerHTML = `
+              <div style="font-size: 46px;">ℹ️</div>
+              <h3 style="color: #60a5fa;">Test avval topshirilgan</h3>
+              <div style="background: rgba(255,255,255,0.05); padding: 16px; border-radius: 14px; margin: 10px 0; text-align: left; font-size: 15px; line-height: 1.7;">
+                📊 Natijangiz: <b>${data.score} / ${data.total}</b> (${data.percentage}%)<br>
+                ${data.passed ? '✅ <b>Muvaffaqiyatli o‘tgansiz!</b>' : '⚠️ <i>O‘tish balliga yetmagan</i>'}
+              </div>
+              <p style="color: var(--hint); font-size: 13px;">${data.message || 'Siz ushbu testni allaqachon topshirgansiz.'}</p>
+              <button class="nav-btn primary" onclick="closeWebApp()" style="margin-top: 10px; width: 100%; padding: 14px;">Botga qaytish ↩️</button>
+            `;
+          } else {
+            modalBox.innerHTML = `
+              <div style="font-size: 46px;">🎉</div>
+              <h3 style="color: var(--success);">Test muvaffaqiyatli topshirildi!</h3>
+              <div style="background: rgba(255,255,255,0.05); padding: 16px; border-radius: 14px; margin: 10px 0; text-align: left; font-size: 15px; line-height: 1.7;">
+                📊 Natija: <b>${data.score} / ${data.total}</b> (${data.percentage}%)<br>
+                ${data.passed ? '✅ <b>Tabriklaymiz, muvaffaqiyatli o‘tdingiz!</b>' : '⚠️ <i>O‘tish balliga yetmadi</i>'}
+              </div>
+              <p style="color: var(--hint); font-size: 13px;">To‘liq hisobot va tahlil bot chatiga yuborildi.</p>
+              <button class="nav-btn primary" onclick="closeWebApp()" style="margin-top: 10px; width: 100%; padding: 14px;">Botga qaytish ↩️</button>
+            `;
+          }
+        } else {
+          throw new Error(data.error || "Xatolik yuz berdi");
+        }
+      } catch (err) {
+        modalBox.innerHTML = `
+          <div style="font-size: 46px;">⚠️</div>
+          <h3 style="color: var(--danger);">Xatolik</h3>
+          <p style="color: var(--hint); font-size: 14px; line-height: 1.5;">${err.message}</p>
+          <button class="nav-btn secondary" onclick="closeConfirmModal()" style="margin-top: 10px; width: 100%; padding: 14px;">Ortga</button>
+        `;
+      }
+
+      if (tg && tg.sendData) {
+        try { tg.sendData(resultKey); } catch (e) {}
+      }
+    }
+
+    function closeWebApp() {
+      if (tg && tg.close) {
+        tg.close();
+      } else {
+        window.close();
+      }
+    }
+
+    // Keyboard navigation for desktop
+    document.addEventListener('keydown', (e) => {
+      const key = e.key.toUpperCase();
+      if (['A', 'B', 'C', 'D', 'E'].includes(key)) {
+        selectOption(key);
+      } else if (e.key === 'ArrowRight') {
+        nextQuestion();
+      } else if (e.key === 'ArrowLeft') {
+        prevQuestion();
+      }
+    });
+
+    // Start
+    loadTest();
+  </script>
+</body>
+</html>
