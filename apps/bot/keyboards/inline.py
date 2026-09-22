@@ -11,6 +11,7 @@ from apps.bot.keyboards.callbacks import (
     BuildCB,
     CertCB,
     ExplainCB,
+    FeedbackCB,
     MenuCB,
     MistakeCB,
     NoopCB,
@@ -133,6 +134,11 @@ def main_menu(user: User) -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text=uz.BTN_HELP, callback_data=MenuCB(action="help").pack()
         ),
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=uz.BTN_FEEDBACK, callback_data=FeedbackCB(action="open").pack()
+        )
     )
 
     if user.is_admin:
@@ -1086,4 +1092,17 @@ def appeal_teacher_reply_keyboard(
         )
     )
     return builder.as_markup()
+
+
+def admin_feedback_reply_keyboard(target_user_id: int) -> InlineKeyboardMarkup:
+    """Admin uchun taklif/muammoga javob berish tugmasi."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="✍️ Foydalanuvchiga javob berish",
+            callback_data=FeedbackCB(action="reply", target_id=target_user_id).pack(),
+        )
+    )
+    return builder.as_markup()
+
 

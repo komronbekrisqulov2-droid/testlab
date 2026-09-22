@@ -66,6 +66,7 @@ BTN_MISTAKES = "🎯 Xatolar ustida ishlash"
 BTN_EXPLANATIONS = "💡 Yechimlar / Izohlar"
 BTN_LINK_PARENT = "👨‍👩‍👧 Ota-ona / Repetitorni ulash"
 BTN_WEBAPP_SOLVE = "📱 Ekranda yechish (Mini App)"
+BTN_FEEDBACK = "✍️ Taklif va Muammo"
 
 
 
@@ -86,27 +87,20 @@ WELCOME_NEW = (
     "Boshlash uchun ro'yxatdan o'ting 👇"
 )
 
-ASK_FIRST_NAME = (
-    "🪪 <b>Ro'yxatdan o'tish</b> · 1/3\n"
+ASK_FULL_NAME = (
+    "🪪 <b>Ro'yxatdan o'tish</b>\n"
     f"{LINE}\n\n"
-    "Ismingizni yozing:"
+    "Iltimos, <b>ism va familiyangizni</b> to'liq kiriting:\n\n"
+    "<i>Namuna: Ali Valiyev yoki Aziza Karimova</i>"
 )
 
-ASK_LAST_NAME = (
-    "🪪 <b>Ro'yxatdan o'tish</b> · 2/3\n"
-    f"{LINE}\n\n"
-    "Familiyangizni yozing:"
+FULL_NAME_INVALID = (
+    "⚠️ <b>Ism va familiyangizni to'liq kiriting!</b>\n\n"
+    "Sertifikat va natijalar ro'yxatida to'g'ri chiqishi uchun kamida 2 ta so'z (ism va familiya) bo'lishi kerak.\n\n"
+    "<i>Namuna: Ali Valiyev</i>"
 )
 
-ASK_PHONE = (
-    "🪪 <b>Ro'yxatdan o'tish</b> · 3/3\n"
-    f"{LINE}\n\n"
-    "Telefon raqamingizni yuboring.\n\n"
-    "<i>Pastdagi tugmani bosing yoki qo'lda yozing.\n"
-    "Xohlamasangiz — o'tkazib yuboring.</i>"
-)
-
-NAME_TOO_SHORT = "⚠️ Juda qisqa. Kamida 2 ta harf yozing."
+NAME_TOO_SHORT = "⚠️ Juda qisqa. Kamida 5 ta harf yozing."
 NAME_TOO_LONG = "⚠️ Juda uzun. Ko'pi bilan 60 ta belgi."
 SEND_TEXT_PLEASE = "⚠️ Iltimos, <b>matn</b> yuboring."
 
@@ -1529,5 +1523,64 @@ def explanation_view_text(test: Test, q_num: int, explanation, my_mistake=None) 
         escape(explanation.explanation_text if explanation else "Ushbu savol uchun hali izoh kiritilmagan."),
     ]
     return "\n".join(lines)
+
+
+# ======================================================================
+#  TAKLIF VA MUAMMO (FEEDBACK)
+# ======================================================================
+
+FEEDBACK_PROMPT = (
+    "✍️ <b>TAKLIF VA MUAMMO</b>\n"
+    f"{LINE}\n\n"
+    "Botni yanada qulay va foydali qilish bo'yicha <b>taklifingiz</b> yoki biror "
+    "<b>xatolik / kamchilikka</b> duch kelgan bo'lsangiz, uni batafsil yozib yuboring.\n\n"
+    "📷 <i>Skrinshot yoki rasm bilan ham yuborishingiz mumkin.</i>\n\n"
+    "Bekor qilish: /cancel"
+)
+
+FEEDBACK_SENT = (
+    "✅ <b>Murojaatingiz ma'muriyatga yetkazildi!</b>\n\n"
+    "Loyiha rivojiga befarq bo'lmaganingiz uchun tashakkur. "
+    "Zarur bo'lsa, mutasaddilar tez orada siz bilan bog'lanishadi."
+)
+
+
+def feedback_admin_notification(user: User, text: str | None = None, has_media: bool = False) -> str:
+    lines = [
+        "📩 <b>YANGI TAKLIF / MUAMMO</b>",
+        LINE,
+        f"👤 <b>Foydalanuvchi:</b> {escape(user.full_name)}",
+        f"🎭 <b>Roli:</b> {user.role_title}",
+        f"🆔 <b>ID:</b> <code>{user.telegram_id}</code>",
+    ]
+    if user.username:
+        lines.append(f"🔗 <b>Username:</b> @{user.username}")
+    if user.phone:
+        lines.append(f"📱 <b>Telefon:</b> {user.phone}")
+    lines.append("")
+    if has_media:
+        lines.append("📎 <i>Foydalanuvchi rasm / fayl ilova qildi.</i>")
+    if text:
+        lines += [
+            "💬 <b>Murojaat matni:</b>",
+            f"«<i>{escape(text)}</i>»",
+        ]
+    lines += [
+        "",
+        LINE,
+        "💡 <i>Quyidagi tugma orqali foydalanuvchiga to'g'ridan-to'g'ri javob yozishingiz mumkin.</i>",
+    ]
+    return "\n".join(lines)
+
+
+def feedback_user_reply(reply_text: str) -> str:
+    return (
+        "👨‍💻 <b>ADMINISTRATOR JAVOBI</b>\n"
+        f"{LINE}\n\n"
+        f"{escape(reply_text)}\n\n"
+        f"{LINE}\n"
+        "<i>TestLab platformasidan foydalanganingiz uchun rahmat!</i>"
+    )
+
 
 

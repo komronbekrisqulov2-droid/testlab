@@ -12,11 +12,9 @@ from aiogram.fsm.state import State, StatesGroup
 
 
 class Registration(StatesGroup):
-    """Ro'yxatdan o'tish: ism -> familiya -> telefon."""
+    """Ro'yxatdan o'tish: to'liq ism va familiya."""
 
-    first_name = State()
-    last_name = State()
-    phone = State()
+    full_name = State()
 
 
 class Building(StatesGroup):
@@ -100,6 +98,18 @@ class TeacherAppealReplyState(StatesGroup):
     waiting_for_reply = State()
 
 
+class FeedbackState(StatesGroup):
+    """Foydalanuvchining taklif yoki muammo murojaati."""
+
+    waiting_for_message = State()
+
+
+class AdminFeedbackReplyState(StatesGroup):
+    """Adminning taklif/muammoga javobi."""
+
+    waiting_for_reply = State()
+
+
 __all__ = (
     "Registration",
     "Building",
@@ -112,6 +122,8 @@ __all__ = (
     "ExplanationEdit",
     "QuestionAppealState",
     "TeacherAppealReplyState",
+    "FeedbackState",
+    "AdminFeedbackReplyState",
 )
 
 

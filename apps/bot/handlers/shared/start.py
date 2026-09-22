@@ -282,137 +282,72 @@ async def check_subscription(
 #  RO'YXATDAN O'TISH
 # ======================================================================
 
+def _validate_full_name(raw: str) -> tuple[tuple[str, str] | None, str | None]:
+    """
+    To'liq ism-familiyani tekshiradi.
+    Kamida 2 ta so'z (ism va familiya) bo'lishi shart.
+    """
+    cleaned = " ".join((raw or "").split())
+    if len(cleaned) < 5:
+        return None, uz.NAME_TOO_SHORT
+    if len(cleaned) > 80:
+        return None, uz.NAME_TOO_LONG
+
+    parts = cleaned.split()
+    if len(parts) < 2:
+        return None, uz.FULL_NAME_INVALID
+
+    # Harflar, apostrof va defis
+    name_pattern = re.compile(r"^[A-Za-zА-Яа-яЁёЎўҚқҒғҲҳ\'-]+$")
+    for part in parts:
+        if not name_pattern.match(part) or len(part) < 2:
+            return None, uz.FULL_NAME_INVALID
+
+    first_name = parts[0].capitalize()
+    last_name = " ".join(p.capitalize() for p in parts[1:])
+    return (first_name, last_name), None
+
+
 @router.callback_query(MenuCB.filter(F.action == "register"))
 async def start_registration(callback: CallbackQuery, state: FSMContext) -> None:
     await safe_answer(callback)
-    await state.set_state(Registration.first_name)
-    await safe_edit(callback, uz.ASK_FIRST_NAME)
+    await state.set_state(Registration.full_name)
+    await safe_edit(callback, uz.ASK_FULL_NAME)
 
 
-def _validate_name(raw: str) -> tuple[str | None, str | None]:
-    """
-    Ismni tekshiradi.
-
-    Returns:
-        (tozalangan_ism, xato_matni) — bittasi doim None.
-    """
-    name = " ".join((raw or "").split())
-
-    if len(name) < MIN_NAME:
-        return None, uz.NAME_TOO_SHORT
-    if len(name) > MAX_NAME:
-        return None, uz.NAME_TOO_LONG
-
-    return name, None
-
-
-@router.message(Registration.first_name, F.text)
-async def registration_first_name(message: Message, state: FSMContext) -> None:
-    name, error = _validate_name(message.text or "")
-
-    if error:
-        await message.answer(error)
-        return
-
-    await state.update_data(first_name=name)
-    await state.set_state(Registration.last_name)
-    await message.answer(uz.ASK_LAST_NAME)
-
-
-@router.message(Registration.last_name, F.text)
-async def registration_last_name(message: Message, state: FSMContext) -> None:
-    name, error = _validate_name(message.text or "")
-
-    if error:
-        await message.answer(error)
-        return
-
-    await state.update_data(last_name=name)
-    await state.set_state(Registration.phone)
-    await message.answer(uz.ASK_PHONE, reply_markup=phone_keyboard())
-
-
-@router.message(Registration.phone, F.contact)
-async def registration_phone_contact(
+@router.message(Registration.full_name, F.text)
+async def registration_full_name(
     message: Message,
     state: FSMContext,
     user: User,
     session: AsyncSession,
 ) -> None:
-    """Tugma orqali yuborilgan raqam."""
-    await _finish_registration(
-        message, state, user, session, phone=message.contact.phone_number
-    )
-
-
-@router.message(Registration.phone, F.text)
-async def registration_phone_text(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    session: AsyncSession,
-) -> None:
-    """Qo'lda yozilgan raqam."""
-    raw = (message.text or "").strip()
-
-    #  «O'tkazib yuborish» — telefon ixtiyoriy
-    if raw.lower() in {"/skip", uz.BTN_SKIP.lower(), "o'tkazish", "otkazish"}:
-        await _finish_registration(message, state, user, session, phone=None)
+    names, error = _validate_full_name(message.text or "")
+    if error or not names:
+        await message.answer(error or uz.FULL_NAME_INVALID)
         return
 
-    digits = re.sub(r"[^\d+]", "", raw)
-
-    if not PHONE_PATTERN.match(digits):
-        await message.answer(
-            "⚠️ Raqam noto'g'ri.\n\n"
-            "Namuna: <code>+998901112233</code>\n\n"
-            "<i>Yoki pastdagi tugmani bosing.</i>"
-        )
-        return
-
-    await _finish_registration(message, state, user, session, phone=digits)
-
-
-@router.message(Registration.phone)
-async def registration_phone_other(message: Message) -> None:
-    await message.answer(
-        "⚠️ Telefon raqamini yuboring yoki pastdagi tugmani bosing."
-    )
-
-
-async def _finish_registration(
-    message: Message,
-    state: FSMContext,
-    user: User,
-    session: AsyncSession,
-    *,
-    phone: str | None,
-) -> None:
-    """Ro'yxatdan o'tishni yakunlaydi."""
-    data = await state.get_data()
-
-    user.first_name = data.get("first_name") or user.first_name
-    user.last_name = data.get("last_name") or user.last_name
-    user.phone = phone
+    first_name, last_name = names
+    user.first_name = first_name
+    user.last_name = last_name
+    user.phone = None
     user.is_registered = True
 
     await UserRepository(session).add_xp(user, 10)
+
+    data = await state.get_data()
+    pending = data.get("pending_payload")
     await state.clear()
 
     log.info("✅ Ro'yxatdan o'tdi: %s (%s)", user.telegram_id, user.full_name)
-
     await message.answer(uz.registered(user), reply_markup=ReplyKeyboardRemove())
 
-    #  Havola orqali kelgan bo'lsa — o'sha joyga olib boramiz.
-    #  Aks holda o'quvchi posterdagi tugmani bosib, ro'yxatdan o'tib,
-    #  keyin testni qo'lda qidirishga majbur bo'lardi.
-    pending = data.get("pending_payload")
     if pending:
-        await state.clear()
         if await handle_payload(message, str(pending), user, session, state):
             return
 
     await show_main_menu(message, user, session)
+
 
 
 #  DIQQAT: ro'yxatdan o'tmaganlar uchun to'siq bu yerda EMAS.

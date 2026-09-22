@@ -15,6 +15,9 @@ o'zi uni aytadi (25 harf = 25 savol).
 
 from __future__ import annotations
 
+import asyncio
+from collections import defaultdict
+
 from aiogram import F, Router
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
@@ -214,6 +217,9 @@ async def start_building_command(message: Message, state: FSMContext) -> None:
     await message.answer(uz.CREATE_START)
 
 
+_user_locks: defaultdict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
+
+
 async def _add_photo(
     message: Message,
     state: FSMContext,
@@ -225,51 +231,52 @@ async def _add_photo(
     media_type: str,
     caption: str | None,
 ) -> None:
-    """Rasmni qo'shadi va tasdiq yuboradi."""
+    """Rasmni qo'shadi va tasdiq yuboradi (albom poygasidan himoyalangan)."""
     catalog = CatalogService(session)
 
-    test = await _load_draft(session, state, user)
+    async with _user_locks[user.id]:
+        test = await _load_draft(session, state, user)
 
-    #  Test aynan BIRINCHI RASM kelganda yaratiladi — foydalanuvchi
-    #  tugmani bosib fikridan qaytsa bazada axlat qolmaydi
-    if test is None:
+        #  Test aynan BIRINCHI RASM kelganda yaratiladi — foydalanuvchi
+        #  tugmani bosib fikridan qaytsa bazada axlat qolmaydi
+        if test is None:
+            try:
+                await catalog.ensure_within_limit(user)
+                test = await catalog.create_draft(user, title=caption)
+            except TestLabError as error:
+                await message.answer(f"⚠️ {error.user_text()}")
+                return
+
+            await state.update_data(draft_id=test.id)
+
         try:
-            await catalog.ensure_within_limit(user)
-            test = await catalog.create_draft(user, title=caption)
+            added = await catalog.add_media(
+                test,
+                user,
+                file_id=file_id,
+                file_unique_id=file_unique_id,
+                media_type=media_type,
+                caption=None,
+            )
         except TestLabError as error:
             await message.answer(f"⚠️ {error.user_text()}")
             return
 
-        await state.update_data(draft_id=test.id)
+        if added is None:
+            await message.answer(uz.PHOTO_DUPLICATE)
+            return
 
-    try:
-        added = await catalog.add_media(
-            test,
-            user,
-            file_id=file_id,
-            file_unique_id=file_unique_id,
-            media_type=media_type,
-            caption=None,
+        total = await catalog.media_count(test)
+
+        #  Albom yuborilganda har rasm uchun alohida xabar chiqmasin —
+        #  chat to'lib ketadi. Faqat birinchisiga javob beramiz.
+        if message.media_group_id and total > 1:
+            return
+
+        await message.answer(
+            uz.photo_added(total),
+            reply_markup=building_keyboard(test.id, has_photo=True),
         )
-    except TestLabError as error:
-        await message.answer(f"⚠️ {error.user_text()}")
-        return
-
-    if added is None:
-        await message.answer(uz.PHOTO_DUPLICATE)
-        return
-
-    total = await catalog.media_count(test)
-
-    #  Albom yuborilganda har rasm uchun alohida xabar chiqmasin —
-    #  chat to'lib ketadi. Faqat birinchisiga javob beramiz.
-    if message.media_group_id and total > 1:
-        return
-
-    await message.answer(
-        uz.photo_added(total),
-        reply_markup=building_keyboard(test.id, has_photo=True),
-    )
 
 
 @router.message(Building.active, F.photo)

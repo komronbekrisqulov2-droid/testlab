@@ -30,7 +30,7 @@ from aiogram import Dispatcher
 
 from apps.bot.handlers.admin import broadcast as admin_broadcast
 from apps.bot.handlers.admin import panel as admin_panel
-from apps.bot.handlers.shared import access, errors, start
+from apps.bot.handlers.shared import access, errors, feedback, start
 from apps.bot.handlers.student import answer as student_answer
 from apps.bot.handlers.student import explanations as student_explanations
 from apps.bot.handlers.student import mistakes as student_mistakes
@@ -48,6 +48,7 @@ def setup_routers(dispatcher: Dispatcher) -> None:
     routers = (
         errors.router,
         start.router,
+        feedback.router,
         #  Broadcast paneldan OLDIN: u `Broadcast.message` holatida
         #  ISTALGAN xabarni ushlashi kerak, panelning qidiruv handleri
         #  esa faqat matnni kutadi va rasmli xabarni yutib yuborardi.

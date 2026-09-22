@@ -124,3 +124,11 @@ class AppealCB(CallbackData, prefix="ap"):
     appeal_id: int = 0
     target_user_id: int = 0
 
+
+class FeedbackCB(CallbackData, prefix="fb"):
+    """Taklif va muammo murojaatlari."""
+
+    action: str = "open"      # open, reply
+    target_id: int = 0        # foydalanuvchi telegram_id
+
+
