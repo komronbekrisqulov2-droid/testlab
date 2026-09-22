@@ -14,6 +14,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from apps.bot.keyboards.callbacks import AdminCB, MenuCB
 from apps.bot.keyboards.inline import back_button, home_button, pagination_row
 from apps.bot.texts import uz
+from core.config import settings
 from core.security.permissions import Role
 from infrastructure.database.repository import Page
 from modules.identity.models import User
@@ -71,6 +72,16 @@ def panel_keyboard() -> InlineKeyboardMarkup:
             callback_data=AdminCB(action="broadcast").pack(),
         )
     )
+
+    webapp_icon = "🟢" if settings.webapp.enabled else "🔴"
+    webapp_status = "Yoqilgan" if settings.webapp.enabled else "O'chirilgan"
+    builder.row(
+        InlineKeyboardButton(
+            text=f"📱 Mini App: {webapp_icon} {webapp_status}",
+            callback_data=AdminCB(action="toggle_webapp").pack(),
+        )
+    )
+
     builder.row(
         InlineKeyboardButton(
             text=uz.BTN_REFRESH, callback_data=AdminCB(action="panel").pack()
@@ -197,16 +208,26 @@ def user_card_keyboard(user: User, page: int, *, is_super: bool = False) -> Inli
                 ).pack(),
             )
         )
-    # Faqat super admin boshqalarni admin qila oladi
-    if is_super and user.role != Role.ADMIN.value and user.role != Role.SUPER_ADMIN.value:
-        role_buttons.append(
-            InlineKeyboardButton(
-                text="🛠 Admin qilish",
-                callback_data=AdminCB(
-                    action="role", target_id=user.id, page=page, period=2
-                ).pack(),
+    # Faqat super admin boshqalarni admin yoki super admin qila oladi
+    if is_super:
+        if user.role != Role.ADMIN.value and user.role != Role.SUPER_ADMIN.value:
+            role_buttons.append(
+                InlineKeyboardButton(
+                    text="🛠 Admin qilish",
+                    callback_data=AdminCB(
+                        action="role", target_id=user.id, page=page, period=2
+                    ).pack(),
+                )
             )
-        )
+        if user.role != Role.SUPER_ADMIN.value:
+            role_buttons.append(
+                InlineKeyboardButton(
+                    text="👑 Super Admin qilish",
+                    callback_data=AdminCB(
+                        action="role", target_id=user.id, page=page, period=3
+                    ).pack(),
+                )
+            )
 
     if role_buttons:
         for i in range(0, len(role_buttons), 2):

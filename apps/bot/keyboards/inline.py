@@ -7,6 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from apps.bot.keyboards.callbacks import (
     AdminCB,
+    AttemptCB,
     BuildCB,
     CertCB,
     ExplainCB,
@@ -363,16 +364,34 @@ def result_keyboard(
     can_get_certificate: bool = False,
 ) -> InlineKeyboardMarkup:
     """Natijadan keyingi tugmalar."""
-    from apps.bot.keyboards.callbacks import CertCB
+    from apps.bot.keyboards.callbacks import AttemptCB, CertCB
 
     builder = InlineKeyboardBuilder()
 
-    #  Sertifikat — eng qimmatli amal, shuning uchun tepada
+    #  1. Rasmli natija kartochkasi (talab bo'yicha chiziladi)
+    if attempt_id:
+        builder.row(
+            InlineKeyboardButton(
+                text="🖼 Rasmli natija kartochkasi",
+                callback_data=AttemptCB(action="card", attempt_id=attempt_id).pack(),
+            )
+        )
+
+    #  2. Sertifikat — eng qimmatli amal
     if can_get_certificate and attempt_id:
         builder.row(
             InlineKeyboardButton(
                 text=uz.BTN_CERTIFICATE,
                 callback_data=CertCB(action="issue", attempt_id=attempt_id).pack(),
+            )
+        )
+
+    #  3. Savollar tahlili (qaysi savolga nima belgilandi)
+    if attempt_id:
+        builder.row(
+            InlineKeyboardButton(
+                text="🔍 Savollar tahlili",
+                callback_data=AttemptCB(action="view", attempt_id=attempt_id).pack(),
             )
         )
 
@@ -767,17 +786,83 @@ def analysis_keyboard(
 def results_keyboard(page: Page) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
+    # Har bir yechilgan test tahlilini ko'rish uchun tugmalar
+    for att in page.items:
+        test_title = att.test.title if att.test else f"Test #{att.test_id}"
+        test_title = test_title[:22] + ("…" if len(test_title) > 22 else "")
+        mark = "✅" if att.is_passed else "❌"
+        builder.row(
+            InlineKeyboardButton(
+                text=f"{mark} {test_title} ({att.percentage:g}%)",
+                callback_data=AttemptCB(action="view", attempt_id=att.id, page=page.page).pack(),
+            )
+        )
+
     row = pagination_row(page, lambda number: PageCB(scope="results", page=number).pack())
     if row:
         builder.row(*row)
 
     builder.row(
         InlineKeyboardButton(
-            text="🎓 Sertifikat olish",
+            text="🎓 Sertifikatlar markazi",
             callback_data=CertCB(action="hub").pack(),
         )
     )
     builder.row(home_button())
+    return builder.as_markup()
+
+
+def attempt_detail_keyboard(
+    test_id: int,
+    attempt_id: int,
+    *,
+    has_mistakes: bool = False,
+    can_certify: bool = False,
+    page: int = 1,
+) -> InlineKeyboardMarkup:
+    """Bitta yechilgan test tahlili ekrani tugmalari."""
+    from apps.bot.keyboards.callbacks import AppealCB, AttemptCB, CertCB, ExplainCB, MistakeCB
+
+    builder = InlineKeyboardBuilder()
+
+    # 1. O'qituvchi yuklagan savollar yechimlari / tushuntirishlari
+    builder.row(
+        InlineKeyboardButton(
+            text="💡 Savollar yechimlari (Izohlar)",
+            callback_data=ExplainCB(action="list", test_id=test_id).pack(),
+        )
+    )
+
+    # 2. Agar xatolar bo'lsa — xatolar ustida ishlash
+    if has_mistakes:
+        builder.row(
+            InlineKeyboardButton(
+                text="🎯 Xatolar ustida ishlash (Qayta yechish)",
+                callback_data=MistakeCB(action="hub").pack(),
+            )
+        )
+
+    # 3. Sertifikat olish
+    if can_certify:
+        builder.row(
+            InlineKeyboardButton(
+                text="📜 Sertifikatni yuklab olish",
+                callback_data=CertCB(action="issue", attempt_id=attempt_id).pack(),
+            )
+        )
+
+    # 4. Rasmli natija kartochkasi
+    builder.row(
+        InlineKeyboardButton(
+            text="🖼 Rasmli natija kartochkasi",
+            callback_data=AttemptCB(action="card", attempt_id=attempt_id, page=page).pack(),
+        )
+    )
+
+    builder.row(
+        back_button(PageCB(scope="results", page=page).pack()),
+        home_button(),
+    )
     return builder.as_markup()
 
 
@@ -954,6 +1039,51 @@ def explanations_list_keyboard(test_id: int, questions_count: int, explanations:
     builder.row(
         back_button(MenuCB(action="results").pack()),
         home_button(),
+    )
+    return builder.as_markup()
+
+
+def single_explanation_keyboard(test_id: int, q_num: int) -> InlineKeyboardMarkup:
+    """Bitta savol yechimi ko'rilganda chiqadigan klaviatura."""
+    from apps.bot.keyboards.callbacks import ExplainCB
+
+    builder = InlineKeyboardBuilder()
+
+    # Orqaga barcha yechimlar ro'yxatiga qaytish
+    builder.row(
+        InlineKeyboardButton(
+            text="⬅️ Barcha savollar yechimlari",
+            callback_data=ExplainCB(action="list", test_id=test_id).pack(),
+        ),
+        home_button(),
+    )
+    return builder.as_markup()
+
+
+def appeal_teacher_reply_keyboard(
+    appeal_id: int, student_id: int, test_id: int, q_num: int
+) -> InlineKeyboardMarkup:
+    """O'qituvchiga kelgan murojaat ostidagi boshqaruv tugmalari."""
+    from apps.bot.keyboards.callbacks import AppealCB, TestCB
+
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="✍️ O'quvchiga javob qaytarish",
+            callback_data=AppealCB(
+                action="reply",
+                test_id=test_id,
+                q_num=q_num,
+                appeal_id=appeal_id,
+                target_user_id=student_id,
+            ).pack(),
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🔧 Testni boshqarish (Kalitni tuzatish)",
+            callback_data=TestCB(action="manage", test_id=test_id).pack(),
+        )
     )
     return builder.as_markup()
 

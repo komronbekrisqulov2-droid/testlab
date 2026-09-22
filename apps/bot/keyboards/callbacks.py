@@ -106,3 +106,21 @@ class ExplainCB(CallbackData, prefix="ex"):
     test_id: int = 0
     q_num: int = 0
 
+
+class AttemptCB(CallbackData, prefix="att"):
+    """Urinish tahlili va ko'rish."""
+
+    action: str      # view, list, card
+    attempt_id: int = 0
+    page: int = 1
+
+
+class AppealCB(CallbackData, prefix="ap"):
+    """Savol bo'yicha e'tiroz va murojaatlar."""
+
+    action: str      # ask, reply, view, list
+    test_id: int = 0
+    q_num: int = 0
+    appeal_id: int = 0
+    target_user_id: int = 0
+

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+import time
 from typing import Any
 
 from aiogram import BaseMiddleware
@@ -16,6 +17,12 @@ from core.security.permissions import Role
 from modules.identity.repository import UserRepository
 
 log = get_logger(__name__)
+
+# Foydalanuvchi faolligini xotirada ushlash (telegram_id -> oxirgi yangilangan vaqt)
+# DB ga har bir bosishda UPDATE yozish o'rniga, faqat 15 daqiqada (900 soniya) 1 marta yoziladi.
+_TOUCH_CACHE: dict[int, float] = {}
+_TOUCH_INTERVAL = 900.0  # 15 daqiqa
+_CACHE_MAX_SIZE = 10_000
 
 
 class UserMiddleware(BaseMiddleware):
@@ -56,11 +63,12 @@ class UserMiddleware(BaseMiddleware):
             last_name=telegram_user.last_name,
         )
 
-        #  `.env` dagi adminlar bazadagi roldan qat'i nazar admin bo'ladi.
-        #  Bu botni boshqarib bo'lmaydigan holatga tushib qolishdan
-        #  himoya qiladi: rolni tasodifan o'zgartirib qo'ysangiz ham
-        #  `.env` orqali qaytarasiz.
-        if settings.bot.is_admin(telegram_user.id) and user.role != Role.ADMIN.value:
+        #  `.env` dagi super admin va adminlar bazadagi roldan qat'i nazar
+        #  tegishli rolni oladi.
+        if settings.bot.is_super_admin(telegram_user.id) and user.role != Role.SUPER_ADMIN.value:
+            await users.set_role(user, Role.SUPER_ADMIN.value)
+            log.info("Super Admin roli berildi: %s", telegram_user.id)
+        elif settings.bot.is_admin(telegram_user.id) and user.role != Role.ADMIN.value:
             if user.role != Role.SUPER_ADMIN.value:
                 await users.set_role(user, Role.ADMIN.value)
                 log.info("Admin roli berildi: %s", telegram_user.id)
@@ -79,7 +87,21 @@ class UserMiddleware(BaseMiddleware):
             await self._notify(event, text)
             return None
 
-        await users.touch(user, username=telegram_user.username)
+        # --- Faollik vaqtini yangilash (Throttled: 15 daqiqada 1 marta) ---
+        now = time.monotonic()
+        last_touched = _TOUCH_CACHE.get(telegram_user.id, 0.0)
+        username_changed = (
+            telegram_user.username is not None and telegram_user.username != user.username
+        )
+
+        if is_new or username_changed or (now - last_touched >= _TOUCH_INTERVAL):
+            _TOUCH_CACHE[telegram_user.id] = now
+            await users.touch(user, username=telegram_user.username)
+
+            if len(_TOUCH_CACHE) > _CACHE_MAX_SIZE:
+                cutoff = now - (_TOUCH_INTERVAL * 2)
+                for uid in [k for k, v in _TOUCH_CACHE.items() if v < cutoff]:
+                    _TOUCH_CACHE.pop(uid, None)
 
         data["user"] = user
         data["is_new_user"] = is_new

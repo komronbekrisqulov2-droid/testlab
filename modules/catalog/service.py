@@ -27,7 +27,13 @@ from modules.catalog.answer_key import (
     parse_author_key,
     parse_one_line,
 )
-from modules.catalog.models import Test, TestMedia, TestStatus, TestVisibility
+from modules.catalog.models import (
+    QuestionExplanation,
+    Test,
+    TestMedia,
+    TestStatus,
+    TestVisibility,
+)
 from modules.catalog.repository import (
     CategoryRepository,
     TestMediaRepository,
@@ -603,4 +609,71 @@ class CatalogService:
         stmt = select(QuestionExplanation).where(QuestionExplanation.test_id == test_id)
         res = await self.session.execute(stmt)
         return {item.question_number: item for item in res.scalars().all()}
+
+    # ==================================================================
+    #  SAVOL BO'YICHA E'TIROZ VA APELLYATSIYALAR
+    # ==================================================================
+
+    async def create_appeal(
+        self,
+        test_id: int,
+        question_number: int,
+        user_id: int,
+        text: str,
+    ):
+        """O'quvchining savol bo'yicha yangi e'tirozini saqlaydi."""
+        from modules.catalog.models import QuestionAppeal
+        from core.datetime_utils import utcnow
+
+        appeal = QuestionAppeal(
+            test_id=test_id,
+            question_number=question_number,
+            user_id=user_id,
+            appeal_text=text.strip(),
+            status="pending",
+            created_at=utcnow(),
+        )
+        self.session.add(appeal)
+        await self.session.commit()
+        return appeal
+
+    async def get_appeal(self, appeal_id: int):
+        """E'tirozni to'liq yuklaydi."""
+        from sqlalchemy import select
+        from modules.catalog.models import QuestionAppeal
+
+        stmt = select(QuestionAppeal).where(QuestionAppeal.id == appeal_id)
+        res = await self.session.execute(stmt)
+        return res.scalars().first()
+
+    async def reply_appeal(
+        self,
+        appeal_id: int,
+        reply_text: str,
+    ):
+        """O'qituvchining e'tirozga javobini saqlaydi."""
+        from core.datetime_utils import utcnow
+
+        appeal = await self.get_appeal(appeal_id)
+        if appeal is None:
+            return None
+
+        appeal.reply_text = reply_text.strip()
+        appeal.status = "replied"
+        appeal.replied_at = utcnow()
+        await self.session.commit()
+        return appeal
+
+    async def get_appeals_by_test(self, test_id: int):
+        """Test bo'yicha barcha e'tirozlarni qaytaradi."""
+        from sqlalchemy import select
+        from modules.catalog.models import QuestionAppeal
+
+        stmt = (
+            select(QuestionAppeal)
+            .where(QuestionAppeal.test_id == test_id)
+            .order_by(QuestionAppeal.created_at.desc())
+        )
+        res = await self.session.execute(stmt)
+        return list(res.scalars().all())
 

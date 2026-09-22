@@ -37,6 +37,27 @@ for _directory in (DATA_DIR, LOGS_DIR, ASSETS_DIR, FONTS_DIR, GENERATED_DIR, EXP
     _directory.mkdir(parents=True, exist_ok=True)
 
 ENV_FILE: Path = BASE_DIR / ".env"
+DYNAMIC_SETTINGS_FILE: Path = DATA_DIR / "system_settings.json"
+
+
+def load_dynamic_settings() -> dict[str, Any]:
+    """Admin panel orqali o'zgartirilgan dinamik sozlamalarni yuklaydi."""
+    if DYNAMIC_SETTINGS_FILE.exists():
+        try:
+            import json
+            return json.loads(DYNAMIC_SETTINGS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def save_dynamic_setting(key: str, value: Any) -> None:
+    """Dinamik sozlamani saqlaydi."""
+    import json
+    settings_dict = load_dynamic_settings()
+    settings_dict[key] = value
+    DYNAMIC_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    DYNAMIC_SETTINGS_FILE.write_text(json.dumps(settings_dict, indent=2), encoding="utf-8")
 
 
 # ======================================================================
@@ -55,6 +76,7 @@ class BotSettings(BaseSettings):
     token: str = Field(alias="BOT_TOKEN")
     username: str = Field(default="TestLabBot", alias="BOT_USERNAME")
     admin_ids: str = Field(default="", alias="ADMIN_IDS")
+    super_admin_ids: str = Field(default="", alias="SUPER_ADMIN_IDS")
     required_channels: str = Field(default="", alias="REQUIRED_CHANNELS")
 
     @field_validator("token")
@@ -109,6 +131,33 @@ class BotSettings(BaseSettings):
         return frozenset(result)
 
     @property
+    def super_admins(self) -> frozenset[int]:
+        """
+        `.env` dagi Bosh Administratorlar (Super Adminlar) ro'yxati.
+
+        Agar SUPER_ADMIN_IDS ko'rsatilmagan bo'lsa, ADMIN_IDS dagi
+        birinchi administrator avtomatik ravishda Super Admin hisoblanadi.
+        """
+        result: set[int] = set()
+        raw = self.super_admin_ids.strip()
+        if not raw and self.admins:
+            return frozenset([next(iter(self.admins))])
+
+        for chunk in raw.replace(";", ",").split(","):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            if not chunk.lstrip("-").isdigit():
+                raise ValueError(
+                    f"SUPER_ADMIN_IDS ichidagi '{chunk}' raqam emas.\n"
+                    f"   Format: SUPER_ADMIN_IDS=123456789\n"
+                    f"   ID'ni @userinfobot dan oling."
+                )
+            result.add(int(chunk))
+
+        return frozenset(result)
+
+    @property
     def channels(self) -> tuple[str, ...]:
         """
         Majburiy obuna kanallari.
@@ -128,7 +177,10 @@ class BotSettings(BaseSettings):
         return bool(self.channels)
 
     def is_admin(self, telegram_id: int) -> bool:
-        return telegram_id in self.admins
+        return telegram_id in self.admins or telegram_id in self.super_admins
+
+    def is_super_admin(self, telegram_id: int) -> bool:
+        return telegram_id in self.super_admins
 
     def deep_link(self, payload: str) -> str:
         """Botga havola yasaydi: t.me/bot?start=<payload>"""
@@ -272,6 +324,12 @@ class WebAppSettings(BaseSettings):
     url: str = Field(default="http://localhost:8088", alias="WEBAPP_URL")
     auto_tunnel: bool = Field(default=True, alias="WEBAPP_AUTO_TUNNEL")
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        dyn = load_dynamic_settings()
+        if "WEBAPP_ENABLED" in dyn:
+            self.enabled = bool(dyn["WEBAPP_ENABLED"])
+
     @property
     def base_url(self) -> str:
         return self.url.rstrip("/")
@@ -288,7 +346,7 @@ class GeminiSettings(BaseSettings):
     )
 
     api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    model: str = Field(default="gemini-3.5-flash-lite", alias="GEMINI_MODEL")
+    model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
 
 
 # ======================================================================

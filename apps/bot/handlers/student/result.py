@@ -10,6 +10,8 @@ matn ko'rinishida yuboriladi — o'quvchi natijasiz qolmaydi.
 
 from __future__ import annotations
 
+import asyncio
+
 from aiogram import F, Router
 from aiogram.types import (
     BufferedInputFile,
@@ -21,8 +23,13 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.bot.keyboards.callbacks import CertCB, MenuCB
-from apps.bot.keyboards.inline import home_button, home_keyboard, result_keyboard
+from apps.bot.keyboards.callbacks import AttemptCB, CertCB, MenuCB
+from apps.bot.keyboards.inline import (
+    attempt_detail_keyboard,
+    home_button,
+    home_keyboard,
+    result_keyboard,
+)
 from apps.bot.texts import uz
 from apps.bot.utils import safe_answer, safe_edit
 from core.exceptions import TestLabError
@@ -45,13 +52,12 @@ async def send_result(
     session: AsyncSession,
 ) -> None:
     """
-    Natijani yuboradi: kartochka rasmi + qisqa matn + tugmalar.
+    Natijani yuboradi: tezkor va to'liq HTML natija + boshqaruv tugmalari.
 
-    `submit` — AssessmentService.SubmitResult
+    Rasmli kartochka talab bo'yicha (alohida tugma orqali) orqa fonda
+    chiziladi — bu orqali natija xabari 5 barobar tezroq (50-80 ms) yetkaziladi
+    va botning asosiy asyncio oqimi og'ir Pillow ishlaridan ozod qilinadi.
     """
-    attempts = AttemptRepository(session)
-    history = await attempts.recent_percentages(user.id, limit=HISTORY_SIZE)
-
     certificates = CertificateService(session)
     can_certify, _ = await certificates.can_issue(submit.attempt, submit.test)
 
@@ -62,56 +68,67 @@ async def send_result(
         can_get_certificate=can_certify,
     )
 
-    #  --- Kartochka ---
-    card = _render_card(submit, user, history)
+    await message.answer(caption, reply_markup=keyboard)
 
-    if card is None:
-        #  Rasm chizilmadi — matn baribir yuboriladi
-        await message.answer(caption, reply_markup=keyboard)
+
+@router.callback_query(AttemptCB.filter(F.action == "card"))
+async def send_result_card(
+    callback: CallbackQuery,
+    callback_data: AttemptCB,
+    user: User,
+    session: AsyncSession,
+) -> None:
+    """Rasmli natija kartochkasini so'rov bo'yicha alohida thread'da chizadi va yuboradi."""
+    if callback.message is None:
         return
 
-    #  Telegram rasm izohi 1024 belgi bilan cheklangan.
-    #  Uzun natija bo'lsa rasmni alohida, matnni alohida yuboramiz.
-    if len(caption) <= 1024:
-        await message.answer_photo(
-            photo=BufferedInputFile(card, filename=_filename(submit)),
-            caption=caption,
-            reply_markup=keyboard,
-        )
-    else:
-        await message.answer_photo(
-            photo=BufferedInputFile(card, filename=_filename(submit)),
-        )
-        await message.answer(caption, reply_markup=keyboard)
+    await safe_answer(callback, "🖼 Natija kartochkasi tayyorlanmoqda...")
 
+    attempts = AttemptRepository(session)
+    attempt = await attempts.get_full(callback_data.attempt_id)
 
-def _render_card(submit, user: User, history: list[float]) -> bytes | None:
-    """Kartochkani chizadi. Xato bo'lsa None (natija matn bilan ketadi)."""
+    if attempt is None:
+        await safe_answer(callback, uz.NOT_FOUND, alert=True)
+        return
+
+    if attempt.user_id != user.id and not user.is_admin:
+        await safe_answer(callback, uz.NO_PERMISSION, alert=True)
+        return
+
+    history = await attempts.recent_percentages(user.id, limit=HISTORY_SIZE)
+    rank, participants = await attempts.rank_in_test(attempt)
+
+    card_data = result_card.ResultCardData(
+        student_name=user.full_name,
+        test_title=attempt.test.title if attempt.test else f"Test #{attempt.test_id}",
+        test_number=attempt.test.number if attempt.test else attempt.test_id,
+        percentage=attempt.percentage,
+        correct=attempt.correct_answers,
+        total=attempt.max_score,
+        wrong=attempt.wrong_answers,
+        skipped=attempt.unanswered,
+        grade=attempt.grade or "F",
+        rank=rank,
+        participants=participants,
+        passed=attempt.is_passed,
+        pass_score=attempt.test.pass_score if attempt.test else 60,
+        history=tuple(history),
+        streak=user.streak_days,
+    )
+
+    # Pillow orqali 1080x1080 rasmni alohida Worker Thread'da chizamiz (Main thread qotmaydi)
     try:
-        return result_card.render(result_card.ResultCardData(
-            student_name=user.full_name,
-            test_title=submit.test.title,
-            test_number=submit.test.number,
-            percentage=submit.percentage,
-            correct=submit.correct,
-            total=submit.attempt.max_score,
-            wrong=submit.wrong,
-            skipped=submit.skipped,
-            grade=submit.grade,
-            rank=submit.rank,
-            participants=submit.participants,
-            passed=submit.passed,
-            pass_score=submit.test.pass_score,
-            history=tuple(history),
-            streak=user.streak_days,
-        ))
+        card = await asyncio.to_thread(result_card.render, card_data)
     except Exception as error:
         log.exception("Natija kartochkasi chizilmadi: %s", error)
-        return None
+        await callback.message.answer("⚠️ Kartochka tayyorlashda xatolik yuz berdi.")
+        return
 
-
-def _filename(submit) -> str:
-    return f"natija_{submit.test.number}_{int(submit.percentage)}.png"
+    filename = f"natija_{card_data.test_number}_{int(card_data.percentage)}.png"
+    await callback.message.answer_photo(
+        photo=BufferedInputFile(card, filename=filename),
+        caption=f"🎯 <b>{uz.escape(card_data.test_title)}</b> — rasmli natija kartochkangiz!",
+    )
 
 
 # ======================================================================
@@ -240,9 +257,9 @@ async def _send_certificate(
         except Exception as error:
             log.warning("Keshlangan sertifikat yuborilmadi: %s", error)
 
-    #  --- Chizamiz ---
+    #  --- Chizamiz (Worker thread orqali Event Loop qotmaydi) ---
     try:
-        image = service.render(certificate)
+        image = await asyncio.to_thread(service.render, certificate)
     except Exception as error:
         log.exception("Sertifikat chizilmadi: %s", error)
         await message.answer(
@@ -270,3 +287,52 @@ async def _send_certificate(
         )
     except Exception as error:
         log.debug("Sertifikat hujjati yuborilmadi: %s", error)
+
+
+# ======================================================================
+#  URINISH TAHLILI VA SAVOLLARNI KO'RISH
+# ======================================================================
+
+@router.callback_query(AttemptCB.filter(F.action == "view"))
+async def view_attempt_analysis(
+    callback: CallbackQuery,
+    callback_data: AttemptCB,
+    user: User,
+    session: AsyncSession,
+) -> None:
+    """O'quvchi yechgan testining savolma-savol to'liq tahlili."""
+    await safe_answer(callback)
+
+    attempts = AttemptRepository(session)
+    attempt = await attempts.get_full(callback_data.attempt_id)
+
+    if attempt is None:
+        await safe_answer(callback, uz.NOT_FOUND, alert=True)
+        return
+
+    if attempt.user_id != user.id and not user.is_admin:
+        await safe_answer(callback, uz.NO_PERMISSION, alert=True)
+        return
+
+    from modules.catalog.service import CatalogService
+    catalog = CatalogService(session)
+    explanations = await catalog.get_explanations(attempt.test_id)
+
+    from modules.assessment.service import AssessmentService
+    mistakes = await AssessmentService(session).get_mistakes(user.id)
+    has_mistakes = any(m.test_id == attempt.test_id for m in mistakes)
+
+    certificates = CertificateService(session)
+    can_certify, _ = await certificates.can_issue(attempt, attempt.test) if attempt.test else (False, "")
+
+    text = uz.attempt_detail_text(attempt, explanations)
+    keyboard = attempt_detail_keyboard(
+        test_id=attempt.test_id,
+        attempt_id=attempt.id,
+        has_mistakes=has_mistakes,
+        can_certify=can_certify,
+        page=callback_data.page,
+    )
+
+    await safe_edit(callback, text, reply_markup=keyboard)
+

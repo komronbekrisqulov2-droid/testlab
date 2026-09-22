@@ -435,3 +435,36 @@ class QuestionExplanation(Base, BigIntPK):
 
     test: Mapped["Test"] = relationship(back_populates="explanations")
 
+
+class QuestionAppeal(Base, BigIntPK):
+    """
+    O'quvchining savol yuzasidan e'tirozi / apellyatsiyasi.
+    """
+
+    __tablename__ = "question_appeals"
+    __table_args__ = (
+        Index("ix_question_appeals_test_qnum", "test_id", "question_number"),
+        Index("ix_question_appeals_user", "user_id"),
+        {"comment": "Savollar yuzasidan e'tiroz va apellyatsiyalar"},
+    )
+
+    test_id: Mapped[int] = mapped_column(
+        ForeignKey("tests.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    question_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    appeal_text: Mapped[str] = mapped_column(Text, nullable=False)
+    reply_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(32), default="pending", server_default="pending", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, nullable=False
+    )
+    replied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    test: Mapped["Test"] = relationship(lazy="selectin")
+    user: Mapped["User"] = relationship(lazy="selectin")
+

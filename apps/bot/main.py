@@ -161,16 +161,16 @@ async def _start_webapp(bot: Bot) -> None:
         if settings.webapp.auto_tunnel and not settings.webapp.url.startswith("https://"):
             try:
                 import asyncio
-                from pycloudflared import try_cloudflare
+                from core.tunnel import start_cloudflare_tunnel
 
                 loop = asyncio.get_running_loop()
-                _tunnel_urls = await loop.run_in_executor(
+                tunnel_url = await loop.run_in_executor(
                     None,
-                    lambda: try_cloudflare(port=settings.webapp.port, verbose=False),
+                    lambda: start_cloudflare_tunnel(port=settings.webapp.port),
                 )
-                if _tunnel_urls and _tunnel_urls.tunnel:
-                    settings.webapp.url = _tunnel_urls.tunnel
-                    log.info("🌐 Web App HTTPS Tunnel tayyor: %s", _tunnel_urls.tunnel)
+                if tunnel_url:
+                    settings.webapp.url = tunnel_url
+                    log.info("🌐 Web App HTTPS Tunnel tayyor: %s", tunnel_url)
             except Exception as tunnel_err:
                 log.warning("Web App HTTPS tunnel ulanmadi (lokal rejimda davom etiladi): %s", tunnel_err)
 
@@ -222,15 +222,13 @@ async def on_shutdown(bot: Bot) -> None:
         _scheduler.shutdown(wait=False)
         log.info("⏱  Fon vazifalari to'xtatildi")
 
-    global _webapp_runner, _tunnel_urls
-    if _tunnel_urls is not None:
-        try:
-            from pycloudflared import try_cloudflare
-            try_cloudflare.terminate(settings.webapp.port)
-            log.info("🌐 Web App tunnel to'xtatildi")
-        except Exception:
-            pass
-        _tunnel_urls = None
+    global _webapp_runner
+    try:
+        from core.tunnel import stop_cloudflare_tunnel
+        stop_cloudflare_tunnel()
+        log.info("🌐 Web App tunnel to'xtatildi")
+    except Exception:
+        pass
 
     if _webapp_runner is not None:
         await _webapp_runner.cleanup()

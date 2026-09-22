@@ -188,6 +188,10 @@ class User(Base, BigIntPK, TimestampMixin, SoftDeleteMixin):
         return self.can(Permission.ADMIN_PANEL)
 
     @property
+    def is_super_admin(self) -> bool:
+        return self.role == Role.SUPER_ADMIN.value or self.can(Permission.ADMIN_SETTINGS)
+
+    @property
     def is_teacher(self) -> bool:
         return self.can(Permission.TEST_CREATE)
 

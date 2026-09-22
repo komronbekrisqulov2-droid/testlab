@@ -88,6 +88,18 @@ class ExplanationEdit(StatesGroup):
     waiting_content = State()
 
 
+class QuestionAppealState(StatesGroup):
+    """O'quvchining savol bo'yicha e'tirozi / murojaati."""
+
+    waiting_for_text = State()
+
+
+class TeacherAppealReplyState(StatesGroup):
+    """O'qituvchining o'quvchi e'tiroziga javobi."""
+
+    waiting_for_reply = State()
+
+
 __all__ = (
     "Registration",
     "Building",
@@ -98,7 +110,10 @@ __all__ = (
     "TestSchedule",
     "ChannelShare",
     "ExplanationEdit",
+    "QuestionAppealState",
+    "TeacherAppealReplyState",
 )
+
 
 
 

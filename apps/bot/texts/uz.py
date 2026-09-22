@@ -679,6 +679,58 @@ def my_results(page) -> str:
     if page.pages > 1:
         lines += ["", f"Sahifa <b>{page.page}/{page.pages}</b>"]
 
+    lines += ["", "💡 <i>Batafsil tahlil va yechimlarni ko'rish uchun kerakli testni tanlang:</i>"]
+
+    return "\n".join(lines)
+
+
+def attempt_detail_text(attempt, explanations: dict | None = None) -> str:
+    test = attempt.test
+    title = escape(test.title if test else f"Test #{attempt.test_id}")
+    author = escape(test.author_name if test else "—")
+    date_str = fmt_datetime(attempt.finished_at)
+    mark = "✅ O'tdi" if attempt.is_passed else "❌ O'tmadi"
+
+    lines = [
+        "📊 <b>TEST TAHLILI VA NATIJALARI</b>",
+        LINE,
+        "",
+        f"📝 <b>Test:</b> {title} (№{test.number if test else attempt.test_id})",
+        f"👨‍🏫 <b>Muallif:</b> {author}",
+        f"📅 <b>Vaqti:</b> {date_str}",
+        f"🎯 <b>Natija:</b> <b>{attempt.score}/{attempt.max_score}</b> ({attempt.percentage:g}%) · {attempt.grade or '—'}",
+        f"🏁 <b>Holati:</b> {mark}",
+        "",
+        "📋 <b>SAVOLMA-SAVOL TAHLIL:</b>",
+        LINE,
+    ]
+
+    sub_key = (attempt.submitted_key or "").upper()
+    ans_key = (test.answer_key or "").upper() if test else ""
+    q_count = max(len(ans_key), len(sub_key), attempt.max_score)
+    expl_map = explanations or {}
+
+    for i in range(1, q_count + 1):
+        my_ans = sub_key[i - 1] if i - 1 < len(sub_key) else "-"
+        correct_ans = ans_key[i - 1] if i - 1 < len(ans_key) else "?"
+        has_expl = i in expl_map or 0 in expl_map
+        expl_badge = " · 💡 [Yechimi bor]" if has_expl else ""
+
+        if my_ans == "-":
+            status_icon = "⚪️"
+            detail = f"Javobsiz (to'g'risi: <b>{correct_ans}</b>)"
+        elif my_ans == correct_ans:
+            status_icon = "✅"
+            detail = f"Siz: <b>{my_ans}</b> (to'g'ri)"
+        else:
+            status_icon = "❌"
+            detail = f"Siz: <b>{my_ans}</b> | To'g'ri: <b>{correct_ans}</b>"
+
+        lines.append(f"{status_icon} <b>#{i:02d}:</b> {detail}{expl_badge}")
+
+    lines.append("")
+    lines.append("💡 <i>Savollarning to'liq yechimlari va tushuntirishlarini ko'rish uchun quyidagi tugmani bosing:</i>")
+
     return "\n".join(lines)
 
 

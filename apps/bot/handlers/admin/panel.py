@@ -102,6 +102,26 @@ async def open_panel(
     await _render_panel(callback, session)
 
 
+@router.callback_query(AdminCB.filter(F.action == "toggle_webapp"))
+async def toggle_webapp(
+    callback: CallbackQuery,
+    user: User,
+    session: AsyncSession,
+) -> None:
+    """Mini App faolligini yoqish yoki o'chirish."""
+    from core.config import save_dynamic_setting, settings
+
+    new_state = not settings.webapp.enabled
+    settings.webapp.enabled = new_state
+    save_dynamic_setting("WEBAPP_ENABLED", new_state)
+
+    status_str = "🟢 Yoqildi (o'quvchilar ekranda yechishi mumkin)" if new_state else "🔴 O'chirildi (faqat bot ichida yechiladi)"
+    await safe_answer(callback, f"Mini App: {status_str}", alert=True)
+    log.info("Admin %s Mini App holatini o'zgartirdi: %s", user.telegram_id, new_state)
+
+    await _render_panel(callback, session)
+
+
 # ======================================================================
 #  👥 FOYDALANUVCHILAR
 # ======================================================================
@@ -229,6 +249,15 @@ async def change_role(
             )
             return
         new_role = Role.ADMIN.value
+    elif callback_data.period == 3:
+        if user.role != Role.SUPER_ADMIN.value:
+            await safe_answer(
+                callback,
+                "⚠️ Faqat Bosh Administrator (Super Admin) super admin tayinlay oladi.",
+                alert=True,
+            )
+            return
+        new_role = Role.SUPER_ADMIN.value
     else:
         new_role = Role.STUDENT.value
 

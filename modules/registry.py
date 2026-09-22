@@ -22,6 +22,7 @@ from modules.catalog.models import (
     ANSWER_LETTERS,
     DEFAULT_CATEGORIES,
     Category,
+    QuestionAppeal,
     QuestionExplanation,
     Test,
     TestMedia,
@@ -52,6 +53,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset({
     "certificates",
     "student_mistakes",
     "question_explanations",
+    "question_appeals",
     "parent_student_links",
 })
 
@@ -69,6 +71,7 @@ __all__ = (
     "TestStatus",
     "TestVisibility",
     "QuestionExplanation",
+    "QuestionAppeal",
     "ANSWER_LETTERS",
     # assessment
     "Attempt",

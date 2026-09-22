@@ -1,4 +1,4 @@
-﻿"""
+"""
 Alembic muhiti.
 
 Muhim jihatlar:

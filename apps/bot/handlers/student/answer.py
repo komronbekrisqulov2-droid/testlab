@@ -35,6 +35,7 @@ from apps.bot.keyboards.inline import (
 from apps.bot.states import Answering
 from apps.bot.texts import uz
 from apps.bot.utils import safe_answer, safe_edit, send_media_group
+from core.config import settings
 from core.exceptions import TestLabError
 from core.logging import get_logger
 from modules.assessment.repository import AttemptRepository
@@ -378,6 +379,14 @@ async def webapp_info_handler(
     """Lokal rejimda Mini App havolasi va yo'riqnoma."""
     await safe_answer(callback)
     if callback.message is None:
+        return
+
+    if not settings.webapp.enabled:
+        await callback.message.answer(
+            "⚠️ Hozirda Mini App administrator tomonidan vaqtincha to'xtatilgan.\n\n"
+            "Siz testni to'g'ridan-to'g'ri bot orqali («✅ Testga javob berish» tugmasi yoki raqam bilan) yechishingiz mumkin.",
+            parse_mode="HTML",
+        )
         return
     url = f"{settings.webapp.base_url}/test/{callback_data.test_id}"
     await callback.message.answer(

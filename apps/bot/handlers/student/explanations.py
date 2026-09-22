@@ -13,13 +13,19 @@ from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.bot.filters import IsRegistered
-from apps.bot.keyboards.callbacks import ExplainCB
+from apps.bot.keyboards.callbacks import AppealCB, ExplainCB
 from apps.bot.keyboards.inline import (
+    appeal_teacher_reply_keyboard,
     explanations_list_keyboard,
     home_keyboard,
     simple_back_keyboard,
+    single_explanation_keyboard,
 )
-from apps.bot.states import ExplanationEdit
+from apps.bot.states import (
+    ExplanationEdit,
+    QuestionAppealState,
+    TeacherAppealReplyState,
+)
 from apps.bot.texts import uz
 from apps.bot.utils import safe_answer, safe_edit
 from core.exceptions import TestLabError
@@ -130,11 +136,10 @@ async def view_explanation(
             break
 
     text = uz.explanation_view_text(test, callback_data.q_num, explanation, my_mistake=my_mistake)
-    q_count = len(test.answer_key) if test.answer_key else test.questions_count
     await safe_edit(
         callback,
         text,
-        reply_markup=explanations_list_keyboard(test.id, q_count, explanations),
+        reply_markup=single_explanation_keyboard(test.id, callback_data.q_num),
     )
 
 
@@ -358,3 +363,208 @@ async def save_explanation(
         f"O'quvchilar testni yechgach, ushbu yechimlarni ko'ra oladilar.",
         reply_markup=home_keyboard(),
     )
+
+
+# ======================================================================
+#  SAVOL BO'YICHA E'TIROZ (APELLYATSIYA)
+# ======================================================================
+
+@router.callback_query(AppealCB.filter(F.action == "ask"))
+async def start_question_appeal(
+    callback: CallbackQuery,
+    callback_data: AppealCB,
+    user: User,
+    session: AsyncSession,
+    state: FSMContext,
+) -> None:
+    """O'quvchi savol bo'yicha e'tiroz yozishni boshlaydi."""
+    await safe_answer(callback)
+
+    catalog = CatalogService(session)
+    test = await catalog.tests.get_full(callback_data.test_id)
+    if test is None:
+        await safe_answer(callback, uz.NOT_FOUND, alert=True)
+        return
+
+    await state.set_state(QuestionAppealState.waiting_for_text)
+    await state.update_data(test_id=test.id, q_num=callback_data.q_num)
+
+    q_text = f"{callback_data.q_num}-savol" if callback_data.q_num > 0 else "Umumiy test"
+    if callback.message:
+        await callback.message.answer(
+            f"📩 <b>O'qituvchiga murojaat / e'tiroz yo'llash</b>\n"
+            f"{uz.LINE}\n\n"
+            f"📝 <b>Test:</b> {uz.escape(test.title)} (№{test.number})\n"
+            f"❓ <b>Savol:</b> {q_text}\n\n"
+            f"Ushbu savol yuzasidan e'tirozingiz, fikringiz yoki tushunmagan joyingizni batafsil yozib yuboring:\n"
+            f"<i>(Masalan: «Domla, 5-savolda javob C emas, B chiqadi, chunki...»)</i>\n\n"
+            f"Bekor qilish: /cancel",
+            reply_markup=simple_back_keyboard(),
+        )
+
+
+@router.message(QuestionAppealState.waiting_for_text, F.text)
+async def submit_question_appeal(
+    message: Message,
+    user: User,
+    session: AsyncSession,
+    state: FSMContext,
+) -> None:
+    """O'quvchi e'tiroz matnini yuborganda uni saqlash va o'qituvchiga yetkazish."""
+    if message.text and message.text.startswith("/cancel"):
+        await state.clear()
+        await message.answer("✖️ Murojaat bekor qilindi.", reply_markup=home_keyboard())
+        return
+
+    data = await state.get_data()
+    test_id = data.get("test_id")
+    q_num = data.get("q_num", 0)
+    await state.clear()
+
+    if not test_id:
+        return
+
+    catalog = CatalogService(session)
+    test = await catalog.tests.get_full(test_id)
+    if test is None:
+        await message.answer(uz.NOT_FOUND, reply_markup=home_keyboard())
+        return
+
+    appeal_text = (message.text or "").strip()
+    appeal = await catalog.create_appeal(
+        test_id=test.id,
+        question_number=q_num,
+        user_id=user.id,
+        text=appeal_text,
+    )
+
+    # Test muallifiga (o'qituvchiga) Telegram xabarnoma yuboramiz
+    if test.author_id and test.author_id != user.id:
+        from modules.identity.repository import UserRepository
+        author = await UserRepository(session).get(test.author_id)
+        if author and author.telegram_id and message.bot:
+            q_info = f"{q_num}-savol" if q_num > 0 else "Umumiy test"
+            notify_text = (
+                f"📩 <b>YANGI SAVOL MUROJAATI / APELLYATSIYA</b>\n"
+                f"{uz.LINE}\n\n"
+                f"📝 <b>Test:</b> {uz.escape(test.title)} (№{test.number})\n"
+                f"❓ <b>Savol:</b> {q_info}\n"
+                f"👤 <b>O'quvchi:</b> {uz.escape(user.full_name)} (@{user.username or '—'})\n\n"
+                f"💬 <b>Murojaat matni:</b>\n"
+                f"«<i>{uz.escape(appeal_text)}</i>»\n"
+                f"{uz.LINE}\n"
+                f"💡 <i>Quyidagi tugma orqali o'quvchiga darhol javob yo'llashingiz mumkin:</i>"
+            )
+            try:
+                await message.bot.send_message(
+                    chat_id=author.telegram_id,
+                    text=notify_text,
+                    reply_markup=appeal_teacher_reply_keyboard(
+                        appeal_id=appeal.id,
+                        student_id=user.telegram_id,
+                        test_id=test.id,
+                        q_num=q_num,
+                    ),
+                )
+            except Exception as notify_err:
+                log.warning("O'qituvchiga murojaat xabari bormadi: %s", notify_err)
+
+    await message.answer(
+        f"✅ <b>Murojaatingiz qabul qilindi!</b>\n\n"
+        f"Savolingiz test muallifiga yetkazildi. O'qituvchi javob berishi bilan bot sizga bildirishnoma yuboradi.",
+        reply_markup=home_keyboard(),
+    )
+
+
+@router.callback_query(AppealCB.filter(F.action == "reply"))
+async def start_teacher_appeal_reply(
+    callback: CallbackQuery,
+    callback_data: AppealCB,
+    user: User,
+    session: AsyncSession,
+    state: FSMContext,
+) -> None:
+    """O'qituvchi o'quvchiga javob qaytarishni boshlaydi."""
+    await safe_answer(callback)
+
+    catalog = CatalogService(session)
+    test = await catalog.tests.get_full(callback_data.test_id)
+    if test is None or (test.author_id != user.id and not user.is_admin):
+        await safe_answer(callback, uz.NO_PERMISSION, alert=True)
+        return
+
+    await state.set_state(TeacherAppealReplyState.waiting_for_reply)
+    await state.update_data(
+        appeal_id=callback_data.appeal_id,
+        student_id=callback_data.target_user_id,
+        test_id=test.id,
+        q_num=callback_data.q_num,
+    )
+
+    q_info = f"{callback_data.q_num}-savol" if callback_data.q_num > 0 else "test"
+    if callback.message:
+        await callback.message.answer(
+            f"✍️ <b>O'quvchiga javob qaytarish</b>\n"
+            f"{uz.LINE}\n\n"
+            f"Test №{test.number}, {q_info} yuzasidan o'quvchiga tushuntirishingiz yoki javobingizni yozib yuboring:\n\n"
+            f"<i>Bekor qilish: /cancel</i>"
+        )
+
+
+@router.message(TeacherAppealReplyState.waiting_for_reply, F.text)
+async def submit_teacher_appeal_reply(
+    message: Message,
+    user: User,
+    session: AsyncSession,
+    state: FSMContext,
+) -> None:
+    """O'qituvchi yozgan javobni o'quvchiga yuborish."""
+    if message.text and message.text.startswith("/cancel"):
+        await state.clear()
+        await message.answer("✖️ Javob berish bekor qilindi.", reply_markup=home_keyboard())
+        return
+
+    data = await state.get_data()
+    appeal_id = data.get("appeal_id")
+    student_id = data.get("student_id")
+    test_id = data.get("test_id")
+    q_num = data.get("q_num", 0)
+    await state.clear()
+
+    reply_text = (message.text or "").strip()
+
+    catalog = CatalogService(session)
+    test = await catalog.tests.get_full(test_id) if test_id else None
+    test_title = test.title if test else "Test"
+    test_num = test.number if test else ""
+
+    if appeal_id:
+        await catalog.reply_appeal(appeal_id, reply_text)
+
+    # O'quvchiga Telegram orqali javob yuboramiz
+    if student_id and message.bot:
+        q_info = f"{q_num}-savol" if q_num > 0 else "Test"
+        student_msg = (
+            f"👨‍🏫 <b>O'QITUVCHIDAN JAVOB KELDI</b>\n"
+            f"{uz.LINE}\n\n"
+            f"📝 <b>Test:</b> {uz.escape(test_title)} (№{test_num})\n"
+            f"❓ <b>Mavzu:</b> {q_info} yuzasidan murojaatingiz\n"
+            f"👤 <b>O'qituvchi:</b> {uz.escape(user.full_name)}\n\n"
+            f"💬 <b>O'qituvchi javobi:</b>\n"
+            f"«<i>{uz.escape(reply_text)}</i>»\n"
+            f"{uz.LINE}"
+        )
+        try:
+            await message.bot.send_message(
+                chat_id=student_id,
+                text=student_msg,
+                reply_markup=home_keyboard(),
+            )
+        except Exception as send_err:
+            log.warning("O'quvchiga javob bormadi: %s", send_err)
+
+    await message.answer(
+        f"✅ <b>Javobingiz o'quvchiga muvaffaqiyatli yuborildi!</b>",
+        reply_markup=home_keyboard(),
+    )
+

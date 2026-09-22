@@ -37,6 +37,12 @@ _media_cache: dict[int, tuple[bytes, str]] = {}
 
 async def handle_test_page(request: web.Request) -> web.Response:
     """Interaktiv test yechish sahifasi."""
+    if not settings.webapp.enabled:
+        return web.Response(
+            text="<h2>⚠️ Mini App vaqtincha to'xtatilgan</h2><p>Administrator tomonidan ilova vaqtincha o'chirilgan. Iltimos, testlarni bot orqali yeching.</p>",
+            content_type="text/html",
+            status=403,
+        )
     index_file = STATIC_DIR / "index.html"
     if not index_file.exists():
         return web.Response(text="Web App sahifasi topilmadi", status=404)
@@ -45,6 +51,9 @@ async def handle_test_page(request: web.Request) -> web.Response:
 
 async def handle_api_test_data(request: web.Request) -> web.Response:
     """Test haqidagi ma'lumotlarni JSON formatida qaytaradi."""
+    if not settings.webapp.enabled:
+        return web.json_response({"error": "Mini App vaqtincha o'chirilgan"}, status=403)
+
     test_id_str = request.match_info.get("test_id", "")
     if not test_id_str.isdigit():
         return web.json_response({"error": "Yaroqsiz test ID"}, status=400)
@@ -121,6 +130,8 @@ async def handle_api_media(request: web.Request) -> web.Response:
             elif tg_file.file_path.endswith(".webp"):
                 content_type = "image/webp"
 
+            if len(_media_cache) >= 100:
+                _media_cache.pop(next(iter(_media_cache)), None)
             _media_cache[media_id] = (data, content_type)
             return web.Response(body=data, content_type=content_type)
         except Exception as e:
@@ -217,26 +228,16 @@ async def handle_api_submit(request: web.Request) -> web.Response:
                 certificates = CertificateService(session)
                 can_certify, _ = await certificates.can_issue(submit.attempt, submit.test)
 
-                card = _render_card(submit, user, history)
                 kb = result_keyboard(
                     submit.test.id,
                     attempt_id=submit.attempt.id,
                     can_get_certificate=can_certify,
                 )
-                if card:
-                    photo = BufferedInputFile(card, filename=f"result_{submit.attempt.id}.png")
-                    await bot.send_photo(
-                        chat_id=user.telegram_id,
-                        photo=photo,
-                        caption=uz.result(submit),
-                        reply_markup=kb,
-                    )
-                else:
-                    await bot.send_message(
-                        chat_id=user.telegram_id,
-                        text=uz.result(submit),
-                        reply_markup=kb,
-                    )
+                await bot.send_message(
+                    chat_id=user.telegram_id,
+                    text=uz.result(submit),
+                    reply_markup=kb,
+                )
 
                 # Muallifga bildirishnoma
                 if test.author_id and test.author_id != user.id:
@@ -393,37 +394,43 @@ async def handle_api_analysis_generate(request: web.Request) -> web.Response:
         key = test.answer_key or ""
         q_count = len(key) if key else test.questions_count
 
+        # Har bir savolning rasmiy to'g'ri kalitini aniq ro'yxat qilib tuzamiz
+        key_list = []
+        for i in range(min(len(key), q_count)):
+            key_list.append(f"• {i+1}-savolning TO'G'RI javobi: '{key[i].upper()}'")
+        key_details = "\n".join(key_list)
+
         prompt = (
-            f"Siz mahoratli repetitor va metodist o'qituvchisiz.\n"
+            f"Siz professional repetitor, tajribali fan o'qituvchisi va metodistsiz.\n"
             f"Test nomi: '{test.title}'\n"
-            f"Savollar soni: {q_count} ta.\n"
-            f"To'g'ri javoblar kaliti: '{key.upper()}'.\n\n"
-            f"VAZIFA:\n"
-            f"Berilgan test varaqasi rasmi(lari)dagi savollarni diqqat bilan o'qing.\n"
-            f"Har bir savol uchun (1 dan {q_count} gacha) nima sababdan aynan shu javob to'g'riligini "
-            f"o'quvchiga o'zbek tilida bosqichma-bosqich, ravon va tushunarli qilib yechimini yozing.\n"
-            f"Har bir savol yechimi 1-3 ta lo'nda va aniq jumlalardan iborat bo'lsin.\n\n"
-            f"Format talabi: Quyidagi JSON strukturasida javob bering:\n"
+            f"Savollar soni: {q_count} ta.\n\n"
+            f"RASMIY VA QAT'IY JAVOBLAR RO'YXATI:\n"
+            f"{key_details}\n\n"
+            f"QAT'IY QOIDALAR (GUIDED AI):\n"
+            f"1. Siz boshqa variantni to'g'ri deb tanlashingiz QAT'IYAN TAQIQLANADI! Yuqorida ko'rsatilgan har bir savolning to'g'ri javobi (harfi) 100% rasmiy va haqiqiy deb qabul qilinsin.\n"
+            f"2. Sening asosiy vazifang — berilgan test varaqasi rasmlaridagi savolni o'qib, aynan nima uchun ko'rsatilgan javob to'g'ri kelishini matematik formulalar, qoidalar yoki mantiqiy xulosalar bilan bosqichma-bosqich o'quvchiga isbotlab berish.\n"
+            f"3. Boshqa xato variantlar nima sababdan to'g'ri kelmasligini ham qisqa va lo'nda tushuntiring.\n"
+            f"4. Har bir yechim o'zbek tilida, aniq, lo'nda va 2-4 jumlada bo'lsin.\n\n"
+            f"Format talabi: Faqat quyidagi JSON strukturasida javob bering:\n"
             f"{{\n"
             f"  \"solutions\": [\n"
-            f"    {{\"question\": 1, \"answer\": \"A\", \"explanation\": \"Yechim tushuntirishi...\"}},\n"
-            f"    {{\"question\": 2, \"answer\": \"B\", \"explanation\": \"Yechim tushuntirishi...\"}}\n"
+            f"    {{\"question\": 1, \"answer\": \"{key[0].upper() if key else 'A'}\", \"explanation\": \"1-savol isboti, formulasi va qoidasi...\"}}\n"
             f"  ]\n"
             f"}}"
         )
 
         parts = [{"text": prompt}] + image_parts
 
-        model_name = settings.gemini.model or "gemini-3.5-flash-lite"
+        model_name = settings.gemini.model or "gemini-2.5-flash"
         models_to_try = []
-        for m in [model_name, "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-latest"]:
+        for m in [model_name, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]:
             if m and m not in models_to_try:
                 models_to_try.append(m)
 
         payload = {
             "contents": [{"parts": parts}],
             "generationConfig": {
-                "temperature": 0.3,
+                "temperature": 0.2,
                 "response_mime_type": "application/json",
             },
         }
@@ -458,6 +465,146 @@ async def handle_api_analysis_generate(request: web.Request) -> web.Response:
         except Exception as err:
             log.error("Gemini API chaqirishda xato: %s", err, exc_info=True)
             return web.json_response({"ok": False, "error": f"Tahlil jarayonida xatolik: {err}"}, status=500)
+
+
+async def handle_api_analysis_chat(request: web.Request) -> web.Response:
+    """O'qituvchi va Gemini o'rtasida bitta savol yechimini to'g'rilash / takomillashtirish chati."""
+    test_id_str = request.match_info.get("test_id", "")
+    if not test_id_str.isdigit():
+        return web.json_response({"ok": False, "error": "Yaroqsiz test ID"}, status=400)
+
+    test_id = int(test_id_str)
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"ok": False, "error": "Noto'g'ri so'rov formati"}, status=400)
+
+    q_num = body.get("questionNumber")
+    if not q_num or not isinstance(q_num, int):
+        return web.json_response({"ok": False, "error": "Savol raqami ko'rsatilmadi"}, status=400)
+
+    teacher_message = (body.get("message") or "").strip()
+    if not teacher_message:
+        return web.json_response({"ok": False, "error": "Xabar matni bo'sh bo'lmasligi kerak"}, status=400)
+
+    current_explanation = (body.get("currentExplanation") or "").strip()
+    api_key = (body.get("apiKey") or settings.gemini.api_key or "").strip()
+    if not api_key:
+        return web.json_response({
+            "ok": False,
+            "error": "Gemini API kaliti topilmadi. Kalitni kiriting yoki serverda sozlang."
+        }, status=400)
+
+    async with get_session() as session:
+        catalog = CatalogService(session)
+        test = await catalog.tests.get(test_id)
+        if test is None:
+            return web.json_response({"ok": False, "error": "Test topilmadi"}, status=404)
+
+        media_items = await catalog.media.list_by_test(test.id)
+        bot: Bot | None = request.app.get("bot")
+
+        # Rasmlarni yuklab olamiz
+        image_parts = []
+        if bot:
+            for m in media_items:
+                if m.media_type in ("photo", "document") and m.file_id:
+                    try:
+                        tg_file = await bot.get_file(m.file_id)
+                        if tg_file.file_path:
+                            buf = io.BytesIO()
+                            await bot.download_file(tg_file.file_path, destination=buf)
+                            img_bytes = buf.getvalue()
+                            b64_data = base64.b64encode(img_bytes).decode("utf-8")
+                            mime = "image/jpeg"
+                            if tg_file.file_path.endswith(".png"):
+                                mime = "image/png"
+                            elif tg_file.file_path.endswith(".webp"):
+                                mime = "image/webp"
+                            image_parts.append({
+                                "inline_data": {
+                                    "mime_type": mime,
+                                    "data": b64_data,
+                                }
+                            })
+                    except Exception as err:
+                        log.warning("Media yuklab olishda xatolik (%s): %s", m.id, err)
+
+        key = test.answer_key or ""
+        correct_answer = key[q_num - 1].upper() if (len(key) >= q_num) else "?"
+
+        prompt = (
+            f"Siz professional repetitor, tajribali fan o'qituvchisi va metodistsiz.\n"
+            f"Hozir siz o'qituvchi bilan birgalikda {q_num}-savol yechimini (izohini) muhokama qilyapsiz va takomillashtiryapsiz.\n\n"
+            f"TEST MA'LUMOTLARI:\n"
+            f"- Test nomi: '{test.title}'\n"
+            f"- Savol: {q_num}-savol\n"
+            f"- Rasmiy to'g'ri javob varianti: '{correct_answer}'\n\n"
+            f"HOZIRGI MAVJUD YECHIM / IZOH:\n"
+            f"\"\"\"{current_explanation or '(Hozircha yechim yozilmagan)'}\"\"\"\n\n"
+            f"O'QITUVCHINING KO'RSATMASI / E'TIROZI / TAKLIFI:\n"
+            f"\"\"\"{teacher_message}\"\"\"\n\n"
+            f"QAT'IY QOIDALAR:\n"
+            f"1. O'qituvchi bildirgan e'tiroz yoki ko'rsatmani inobatga oling (masalan: formulalarni to'g'rilang, hisob-kitobdagi xatolikni tuzating, soddaroq yoki qisqaroq yozing).\n"
+            f"2. Rasmiy to'g'ri javob varianti '{correct_answer}'. Yechim aynan shu variant to'g'riligini mantiqiy va matematik isbotlab berishi shart.\n"
+            f"3. Yangilangan yechim o'zbek tilida, aniq, pedagogik jihatdan to'g'ri va o'quvchi uchun tushunarli shaklda bo'lsin.\n"
+            f"4. Javobingizni FAQAT quyidagi JSON formatida qaytaring:\n"
+            f"{{\n"
+            f"  \"updated_explanation\": \"Savolning yangi, to'liq va to'g'rilangan yechim matni...\",\n"
+            f"  \"ai_reply\": \"O'qituvchiga qisqa xushmuomala javob (masalan: 'Hisob-kitob qayta tekshirildi va tushuntirish to'g'rilandi')\"\n"
+            f"}}"
+        )
+
+        parts = [{"text": prompt}] + image_parts
+
+        model_name = settings.gemini.model or "gemini-2.5-flash"
+        models_to_try = []
+        for m in [model_name, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]:
+            if m and m not in models_to_try:
+                models_to_try.append(m)
+
+        payload = {
+            "contents": [{"parts": parts}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "response_mime_type": "application/json",
+            },
+        }
+
+        try:
+            import aiohttp
+            async with aiohttp.ClientSession() as http_client:
+                last_err = "Gemini bilan muloqotda xatolik"
+                for target_model in models_to_try:
+                    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key}"
+                    try:
+                        async with http_client.post(gemini_url, json=payload, timeout=aiohttp.ClientTimeout(total=45)) as resp:
+                            resp_data = await resp.json()
+                            if resp.status == 200:
+                                candidates = resp_data.get("candidates", [])
+                                if candidates:
+                                    content_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
+                                    parsed_json = json.loads(content_text)
+                                    updated_explanation = parsed_json.get("updated_explanation", "").strip()
+                                    ai_reply = parsed_json.get("ai_reply", "Izoh yangilandi").strip()
+                                    return web.json_response({
+                                        "ok": True,
+                                        "question": q_num,
+                                        "updated_explanation": updated_explanation,
+                                        "ai_reply": ai_reply,
+                                    })
+                            last_err = resp_data.get("error", {}).get("message", f"Gemini API xatosi ({resp.status})")
+                            log.warning("Gemini chat model '%s' bilan xatolik: %s", target_model, last_err)
+                    except Exception as req_err:
+                        last_err = str(req_err)
+                        log.warning("Gemini chat so'rov xatosi (%s): %s", target_model, req_err)
+
+                return web.json_response({"ok": False, "error": last_err}, status=400)
+
+        except Exception as err:
+            log.error("Gemini chat API chaqirishda xato: %s", err, exc_info=True)
+            return web.json_response({"ok": False, "error": f"Chat jarayonida xatolik: {err}"}, status=500)
+
 
 
 
@@ -529,6 +676,7 @@ def create_webapp(bot: Bot | None = None) -> web.Application:
     app.router.add_get("/analysis/{test_id}", handle_analysis_page)
     app.router.add_get("/api/analysis/{test_id}", handle_api_analysis_data)
     app.router.add_post("/api/analysis/{test_id}/generate", handle_api_analysis_generate)
+    app.router.add_post("/api/analysis/{test_id}/chat", handle_api_analysis_chat)
     app.router.add_post("/api/analysis/{test_id}/save", handle_api_analysis_save)
 
     app.router.add_static("/static/", STATIC_DIR)
