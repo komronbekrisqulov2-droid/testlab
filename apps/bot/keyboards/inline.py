@@ -368,6 +368,7 @@ def result_keyboard(
     *,
     attempt_id: int = 0,
     can_get_certificate: bool = False,
+    hide_analysis: bool = False,
 ) -> InlineKeyboardMarkup:
     """Natijadan keyingi tugmalar."""
     from apps.bot.keyboards.callbacks import AttemptCB, CertCB
@@ -392,8 +393,8 @@ def result_keyboard(
             )
         )
 
-    #  3. Savollar tahlili (qaysi savolga nima belgilandi)
-    if attempt_id:
+    #  3. Savollar tahlili (agar test ochiq bo'lsa va kalitlar yashirilgan bo'lsa ko'rsatilmaydi)
+    if attempt_id and not hide_analysis:
         builder.row(
             InlineKeyboardButton(
                 text="🔍 Savollar tahlili",
@@ -401,12 +402,13 @@ def result_keyboard(
             )
         )
 
-    builder.row(
-        InlineKeyboardButton(
-            text=uz.BTN_EXPLANATIONS,
-            callback_data=ExplainCB(action="list", test_id=test_id).pack(),
+    if not hide_analysis:
+        builder.row(
+            InlineKeyboardButton(
+                text=uz.BTN_EXPLANATIONS,
+                callback_data=ExplainCB(action="list", test_id=test_id).pack(),
+            )
         )
-    )
     builder.row(
         InlineKeyboardButton(
             text=uz.BTN_LEADERBOARD,

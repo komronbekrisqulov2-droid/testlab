@@ -9,9 +9,7 @@ from aiogram.filters import Command, CommandObject, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     CallbackQuery,
-    KeyboardButton,
     Message,
-    ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,21 +32,8 @@ from modules.identity.repository import UserRepository
 log = get_logger(__name__)
 router = Router(name="start")
 
-#  Telefon: +998901112233, 998901112233, 901112233
-PHONE_PATTERN = re.compile(r"^\+?\d{7,15}$")
-
-MIN_NAME = 2
-MAX_NAME = 60
-
-
-def phone_keyboard() -> ReplyKeyboardMarkup:
-    """Telefon so'rash uchun pastki klaviatura."""
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=uz.BTN_SHARE_PHONE, request_contact=True)]],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-        input_field_placeholder="yoki qo'lda yozing",
-    )
+MIN_NAME_LEN = 5
+MAX_NAME_LEN = 80
 
 
 # ======================================================================
@@ -286,14 +271,29 @@ def _validate_full_name(raw: str) -> tuple[tuple[str, str] | None, str | None]:
     """
     To'liq ism-familiyani tekshiradi.
     Kamida 2 ta so'z (ism va familiya) bo'lishi shart.
+    O'zbek harflari (Oʻ, Gʻ, Sh, Ch) va turli apostrof shakllarini to'g'ri qabul qiladi.
     """
-    cleaned = " ".join((raw or "").split())
-    if len(cleaned) < 5:
+    if not raw or not isinstance(raw, str):
+        return None, uz.FULL_NAME_INVALID
+
+    # Barcha turdagi apostroflarni yagona standart apostrofga keltiramiz
+    normalized = (
+        raw.replace("`", "'")
+        .replace("ʻ", "'")
+        .replace("ʼ", "'")
+        .replace("’", "'")
+        .replace("‘", "'")
+    )
+    cleaned = " ".join(normalized.split())
+
+    if len(cleaned) < MIN_NAME_LEN:
         return None, uz.NAME_TOO_SHORT
-    if len(cleaned) > 80:
+    if len(cleaned) > MAX_NAME_LEN:
         return None, uz.NAME_TOO_LONG
 
     parts = cleaned.split()
+    if len(parts) == 1:
+        return None, uz.ONE_WORD_NAME
     if len(parts) < 2:
         return None, uz.FULL_NAME_INVALID
 

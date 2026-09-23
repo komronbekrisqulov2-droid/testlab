@@ -96,8 +96,9 @@ async def open_test(
     media = await catalog.list_media(test)
 
     #  Avval rasmlar — o'quvchi nima yechayotganini ko'rsin
+    #  Anti-cheat: suv belgisi (watermark) va skrinshot/forward himoyasi bilan yuboriladi
     if media:
-        await send_media_group(message, media)
+        await send_media_group(message, media, user=user, protect_content=True)
 
     #  Vaqt hisobi rasmlar YUBORILGACH boshlanadi — albom sekin yetib
     #  borsa, o'quvchi hali savolni ko'rmasidan vaqti ketib qolmasin.
@@ -115,6 +116,7 @@ async def open_test(
     await message.answer(
         uz.test_card(test, len(media)),
         reply_markup=test_card_keyboard(test.id, has_images=bool(media)),
+        protect_content=True,
     )
 
 

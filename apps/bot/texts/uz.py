@@ -91,17 +91,30 @@ ASK_FULL_NAME = (
     "🪪 <b>Ro'yxatdan o'tish</b>\n"
     f"{LINE}\n\n"
     "Iltimos, <b>ism va familiyangizni</b> to'liq kiriting:\n\n"
-    "<i>Namuna: Ali Valiyev yoki Aziza Karimova</i>"
+    "📌 <b>Nega bu muhim?</b>\n"
+    "Ism va familiyangiz rasmiy <b>sertifikat, diplom, reyting va o'qituvchi hisoboti</b>da "
+    "aynan siz kiritganingizdek aks etadi. Shuning uchun laqab (nikneym) yoki qisqartma yozmaslikni so'raymiz.\n\n"
+    "💡 <i>Namuna:</i> <b>Ali Valiyev</b> yoki <b>Aziza Karimova Akmal qizi</b>\n\n"
+    "<i>(Telefon raqam kiritish talab etilmaydi)</i>"
 )
 
 FULL_NAME_INVALID = (
-    "⚠️ <b>Ism va familiyangizni to'liq kiriting!</b>\n\n"
+    "⚠️ <b>Ism va familiyangizni to'liq kiriting!</b>\n"
+    f"{LINE}\n\n"
     "Sertifikat va natijalar ro'yxatida to'g'ri chiqishi uchun kamida 2 ta so'z (ism va familiya) bo'lishi kerak.\n\n"
-    "<i>Namuna: Ali Valiyev</i>"
+    "Faqat harflar, apostrof va defisdan foydalaning (raqam yoki belgilarsiz).\n\n"
+    "💡 <i>Namuna:</i> <b>Ali Valiyev</b>"
+)
+
+ONE_WORD_NAME = (
+    "⚠️ <b>Faqat bitta so'z kiritildi!</b>\n"
+    f"{LINE}\n\n"
+    "Siz faqat ismingizni kiritdingiz. Sertifikat va hisobotda to'liq ko'rinishi uchun familiyangizni ham yozing.\n\n"
+    "💡 <i>Namuna:</i> <b>Ali Valiyev</b>"
 )
 
 NAME_TOO_SHORT = "⚠️ Juda qisqa. Kamida 5 ta harf yozing."
-NAME_TOO_LONG = "⚠️ Juda uzun. Ko'pi bilan 60 ta belgi."
+NAME_TOO_LONG = "⚠️ Juda uzun. Ko'pi bilan 80 ta belgi."
 SEND_TEXT_PLEASE = "⚠️ Iltimos, <b>matn</b> yuboring."
 
 
@@ -340,18 +353,30 @@ COMPACT_THRESHOLD = 25
 MAX_MISTAKES_SHOWN = 40
 
 
-def result(submit) -> str:
+def result(submit, *, hide_keys: bool = False) -> str:
     """
     Savolma-savol natija.
 
-    25 tagacha savol — hammasi ko'rsatiladi.
-    Undan ko'p — faqat xato va javobsizlar (to'g'rilari sanaladi).
+    `hide_keys=True` bo'lsa (masalan test hali davom etayotganda yoki muddat tugamaguncha),
+    savollarning to'g'ri kalitlari ko'rsatilmaydi — faqat to'plangan ball va foiz ko'rsatiladi.
 
     `submit` — AssessmentService.SubmitResult
     """
     test = submit.test
-    total = len(submit.questions)
+    total = len(submit.questions) if submit.questions else (test.questions_count or 1)
     compact = total > COMPACT_THRESHOLD
+
+    if getattr(submit, "is_disqualified", False):
+        return (
+            f"🚨 <b>Test qoidabuzarlik sababli bekor qilindi!</b>\n"
+            f"{LINE}\n\n"
+            f"📌 Test kodi: <b>{test.number}</b>\n"
+            f"📝 Savollar soni: <b>{test.questions_count} ta</b>\n"
+            f"👤 Test yaratuvchisi: {escape(test.author_name)}\n"
+            f"⚠️ <b>Sabab:</b> Test jarayonida {getattr(submit, 'tab_switches_count', 0)} marta test oynasidan chiqildi.\n\n"
+            f"📊 Natijangiz: <b>0 ball (Bekor qilingan)</b>\n"
+            f"ℹ️ O'qituvchi hisobotiga belgi tushirildi."
+        )
 
     lines = [
         f"📌 Test kodi: <b>{test.number}</b>",
@@ -360,7 +385,20 @@ def result(submit) -> str:
         "",
     ]
 
-    if compact:
+    if hide_keys:
+        lines += [
+            "🛡 <b>Anti-Cheat Himoyasi:</b>",
+            "<i>To'g'ri kalitlar va savollar tahlili sir saqlanmoqda.</i>",
+        ]
+        if test.ends_at:
+            from core.datetime_utils import fmt_datetime
+            lines.append(
+                f"🔒 <i>To'liq tahlil test muddati tugagach (<b>{fmt_datetime(test.ends_at)}</b>) ochiladi.</i>"
+            )
+        else:
+            lines.append("🔒 <i>To'liq tahlil test yakunlangach ochiladi.</i>")
+        lines.append("")
+    elif compact:
         mistakes = [item for item in submit.questions if item.verdict is not True]
 
         if mistakes:

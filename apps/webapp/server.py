@@ -152,6 +152,8 @@ async def handle_api_submit(request: web.Request) -> web.Response:
 
     raw_answers = (body.get("answers") or "").strip()
     user_id = body.get("user_id")
+    tab_switches = int(body.get("tab_switches") or 0)
+    is_disqualified = bool(body.get("disqualified") or False)
 
     test_id = int(test_id_str)
     async with get_session() as session:
@@ -189,7 +191,13 @@ async def handle_api_submit(request: web.Request) -> web.Response:
 
         # Allaqachon topshirilgan bo'lsa tekshirish
         try:
-            submit = await assessment.submit(test, user, raw_answers)
+            submit = await assessment.submit(
+                test,
+                user,
+                raw_answers,
+                tab_switches_count=tab_switches,
+                is_disqualified=is_disqualified,
+            )
         except AlreadyAnsweredError:
             # Foydalanuvchiga xatolik emas, oxirgi urinishini chiroyli ko'rsatamiz
             from modules.assessment.repository import AttemptRepository
@@ -212,32 +220,44 @@ async def handle_api_submit(request: web.Request) -> web.Response:
         except TestLabError as e:
             return web.json_response({"error": e.user_text()}, status=400)
 
-        # Telegram chatga rasmli hisobotni yuboramiz
+        # Telegram chatga hisobotni yuboramiz
         bot = request.app.get("bot")
         if bot is not None:
             try:
-                from aiogram.types import BufferedInputFile
-
-                from apps.bot.handlers.student.result import HISTORY_SIZE, _render_card
                 from apps.bot.keyboards.inline import notification_keyboard, result_keyboard
                 from modules.assessment.repository import AttemptRepository
                 from modules.certification.service import CertificateService
 
-                attempts_repo = AttemptRepository(session)
-                history = await attempts_repo.recent_percentages(user.id, limit=HISTORY_SIZE)
-                certificates = CertificateService(session)
-                can_certify, _ = await certificates.can_issue(submit.attempt, submit.test)
+                if is_disqualified:
+                    msg_text = (
+                        f"🚨 <b>Test qoidabuzarlik sababli bekor qilindi!</b>\n"
+                        f"━━━━━━━━━━━━━━━━━━\n\n"
+                        f"📌 Test kodi: <b>{test.number}</b> ({test.title})\n"
+                        f"⚠️ <b>Sabab:</b> Siz test jarayonida {tab_switches} marta test oynasidan chiqdingiz (boshqa ilovaga o‘tdingiz).\n\n"
+                        f"📊 Natijangiz: <b>0 ball (Bekor qilingan)</b>\n"
+                        f"ℹ️ Bu haqda o‘qituvchi hisobotida qayd etildi."
+                    )
+                    await bot.send_message(
+                        chat_id=user.telegram_id,
+                        text=msg_text,
+                    )
+                else:
+                    certificates = CertificateService(session)
+                    can_certify, _ = await certificates.can_issue(submit.attempt, submit.test)
 
-                kb = result_keyboard(
-                    submit.test.id,
-                    attempt_id=submit.attempt.id,
-                    can_get_certificate=can_certify,
-                )
-                await bot.send_message(
-                    chat_id=user.telegram_id,
-                    text=uz.result(submit),
-                    reply_markup=kb,
-                )
+                    # Agar test muddati hali o'tmagan bo'lsa yoki show_answers False bo'lsa kalitlar yashiriladi
+                    hide_keys = not test.show_answers or (test.ends_at is not None and not test.already_ended)
+
+                    kb = result_keyboard(
+                        submit.test.id,
+                        attempt_id=submit.attempt.id,
+                        can_get_certificate=can_certify,
+                    )
+                    await bot.send_message(
+                        chat_id=user.telegram_id,
+                        text=uz.result(submit, hide_keys=hide_keys),
+                        reply_markup=kb,
+                    )
 
                 # Muallifga bildirishnoma
                 if test.author_id and test.author_id != user.id:
@@ -276,6 +296,8 @@ async def handle_api_submit(request: web.Request) -> web.Response:
             "percentage": round(submit.percentage, 1),
             "passed": submit.passed,
             "attempt_id": submit.attempt.id,
+            "disqualified": is_disqualified,
+            "tab_switches": tab_switches,
         })
 
 

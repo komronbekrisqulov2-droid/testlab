@@ -111,6 +111,8 @@ class SubmitResult:
     participants: int
     streak: int = 0
     streak_grew: bool = False
+    tab_switches_count: int = 0
+    is_disqualified: bool = False
 
 
 class AssessmentService:
@@ -254,7 +256,15 @@ class AssessmentService:
     #  JAVOB BERISH
     # ==================================================================
 
-    async def submit(self, test: Test, user: User, raw: str) -> SubmitResult:
+    async def submit(
+        self,
+        test: Test,
+        user: User,
+        raw: str,
+        *,
+        tab_switches_count: int = 0,
+        is_disqualified: bool = False,
+    ) -> SubmitResult:
         """
         Javoblarni qabul qiladi, tekshiradi va natijani qaytaradi.
         """
@@ -281,7 +291,7 @@ class AssessmentService:
 
         parsed = parse_answers(raw, expected=expected)
 
-        if parsed.is_empty:
+        if parsed.is_empty and not is_disqualified:
             raise ValidationError(
                 "Hech qanday javob topilmadi.",
                 hint="Kamida bitta savolga javob bering.",
@@ -300,23 +310,39 @@ class AssessmentService:
         results, correct, wrong, skipped = self._grade(key, parsed.letters)
 
         max_score = expected or 1
-        percentage = round(correct / max_score * 100, 1)
-        grade = grade_for(percentage)[0]
-        passed = percentage >= test.pass_score
+
+        if is_disqualified:
+            final_correct = 0
+            final_wrong = max_score
+            final_skipped = 0
+            percentage = 0.0
+            grade = "F"
+            passed = False
+            status = AttemptStatus.CANCELLED.value
+        else:
+            final_correct = correct
+            final_wrong = wrong
+            final_skipped = skipped
+            percentage = round(correct / max_score * 100, 1)
+            grade = grade_for(percentage)[0]
+            passed = percentage >= test.pass_score
+            status = AttemptStatus.FINISHED.value
 
         now = utcnow()
         result_fields = dict(
-            status=AttemptStatus.FINISHED.value,
+            status=status,
             submitted_key=parsed.letters,
             finished_at=now,
-            score=correct,
+            score=final_correct,
             max_score=max_score,
             percentage=percentage,
             grade=grade,
             is_passed=passed,
-            correct_count=correct,
-            wrong_count=wrong,
-            skipped_count=skipped,
+            correct_count=final_correct,
+            wrong_count=final_wrong,
+            skipped_count=final_skipped,
+            tab_switches_count=tab_switches_count,
+            is_disqualified=is_disqualified,
         )
 
         if active is not None:
@@ -340,37 +366,43 @@ class AssessmentService:
         await self.attempts.refresh(attempt, "test", "user")
         await self.tests.refresh_stats(test)
 
-        # Xatolar daftariga yozish
-        for q in results:
-            if q.verdict is not True:
-                mistake = StudentMistake(
-                    user_id=user.id,
-                    test_id=test.id,
-                    attempt_id=attempt.id,
-                    question_number=q.number,
-                    given_answer=q.given or "-",
-                    correct_answer=q.correct,
-                    is_resolved=False,
-                )
-                self.session.add(mistake)
+        # Xatolar daftariga yozish (faqat diskvalifikatsiya bo'lmagan bo'lsa)
+        if not is_disqualified:
+            for q in results:
+                if q.verdict is not True:
+                    mistake = StudentMistake(
+                        user_id=user.id,
+                        test_id=test.id,
+                        attempt_id=attempt.id,
+                        question_number=q.number,
+                        given_answer=q.given or "-",
+                        correct_answer=q.correct,
+                        is_resolved=False,
+                    )
+                    self.session.add(mistake)
 
-        streak, streak_grew = await self.users.touch_streak(user)
+            streak, streak_grew = await self.users.touch_streak(user)
+            xp = await self._award_xp(user, attempt, streak_grew=streak_grew)
+        else:
+            streak = getattr(user, "streak_days", 0)
+            streak_grew = False
+            xp = 0
 
-        xp = await self._award_xp(user, attempt, streak_grew=streak_grew)
         rank, participants = await self.attempts.rank_in_test(attempt)
 
         log.info(
-            "Javob: user=%s test=№%s natija=%s%% (%d/%d) o'rin=%d",
-            user.telegram_id, test.number, percentage, correct, max_score, rank,
+            "Javob: user=%s test=№%s natija=%s%% (%d/%d) o'rin=%d anti_cheat=(switches=%d, disq=%s)",
+            user.telegram_id, test.number, percentage, final_correct, max_score, rank,
+            tab_switches_count, is_disqualified,
         )
 
         return SubmitResult(
             attempt=attempt,
             test=test,
             questions=results,
-            correct=correct,
-            wrong=wrong,
-            skipped=skipped,
+            correct=final_correct,
+            wrong=final_wrong,
+            skipped=final_skipped,
             percentage=percentage,
             grade=grade,
             passed=passed,
@@ -379,6 +411,8 @@ class AssessmentService:
             participants=participants,
             streak=streak,
             streak_grew=streak_grew,
+            tab_switches_count=tab_switches_count,
+            is_disqualified=is_disqualified,
         )
 
     async def get_mistakes(self, user_id: int, test_id: int | None = None) -> list[StudentMistake]:

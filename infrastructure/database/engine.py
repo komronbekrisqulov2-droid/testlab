@@ -164,6 +164,15 @@ async def _ensure_columns() -> None:
                     await connection.execute(text("ALTER TABLE tests ADD COLUMN channel_message_id INTEGER"))
                 if "results_posted_at" not in cols:
                     await connection.execute(text("ALTER TABLE tests ADD COLUMN results_posted_at DATETIME"))
+
+            # attempts jadvalidagi anti-cheat ustunlari
+            res_att = await connection.execute(text("PRAGMA table_info(attempts)"))
+            att_cols = {row[1] for row in res_att.fetchall()}
+            if att_cols:
+                if "tab_switches_count" not in att_cols:
+                    await connection.execute(text("ALTER TABLE attempts ADD COLUMN tab_switches_count INTEGER DEFAULT 0"))
+                if "is_disqualified" not in att_cols:
+                    await connection.execute(text("ALTER TABLE attempts ADD COLUMN is_disqualified BOOLEAN DEFAULT 0"))
         except Exception as err:
             log.debug("Ustunlarni tekshirishda xatolik: %s", err)
 

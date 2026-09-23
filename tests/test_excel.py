@@ -124,18 +124,20 @@ async def main() -> int:
         sheet = workbook["Natijalar"]
         check("sarlavha", sheet["A1"].value, "Blok-3 Matematika")
 
-        headers = [sheet.cell(row=4, column=i).value for i in range(1, 15)]
+        headers = [sheet.cell(row=4, column=i).value for i in range(1, 16)]
         check("№ ustuni", headers[0], "№")
         check("ism ustuni", headers[1], "Familiya, Ism")
         check("telefon ustuni", headers[3], "Telefon")
-        check("javoblar ustuni", headers[12], "Javoblari")
+        check("anti-cheat ustuni", headers[12], "Anti-cheat nazorati")
+        check("javoblar ustuni", headers[13], "Javoblari")
 
         #  Reyting tartibida: 100% birinchi
         check("1-o'rin ismi", sheet.cell(row=5, column=2).value, "Komronbek Risqulov")
         check("1-o'rin username", sheet.cell(row=5, column=3).value, "@komronbek_risqulov")
         check("1-o'rin telefoni", sheet.cell(row=5, column=4).value, "+998901112233")
         check("1-o'rin foizi", sheet.cell(row=5, column=7).value, 1.0)
-        check("1-o'rin javoblari", sheet.cell(row=5, column=13).value, "ABCDABCDAB")
+        check("1-o'rin anti-cheat", sheet.cell(row=5, column=13).value, "🟢 Halol (0)")
+        check("1-o'rin javoblari", sheet.cell(row=5, column=14).value, "ABCDABCDAB")
         check("1-o'rin holati", sheet.cell(row=5, column=12).value, "O'tdi")
 
         check("oxirgi o'rin", sheet.cell(row=9, column=2).value, "Malika Ergasheva")

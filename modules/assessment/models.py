@@ -138,6 +138,18 @@ class Attempt(Base, BigIntPK):
     )
 
     # ------------------------------------------------------------------
+    #  Anti-cheat
+    # ------------------------------------------------------------------
+    tab_switches_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False,
+        doc="Ilovadan/oynadan chiqishlar soni",
+    )
+    is_disqualified: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False,
+        doc="Qoidabuzarlik (masalan, 3 marta chiqish) sababli bekor qilinganmi",
+    )
+
+    # ------------------------------------------------------------------
     #  Bog'lanishlar
     # ------------------------------------------------------------------
     test: Mapped["Test"] = relationship(back_populates="attempts", lazy="selectin")
@@ -149,7 +161,11 @@ class Attempt(Base, BigIntPK):
 
     @property
     def is_finished(self) -> bool:
-        return self.status in (AttemptStatus.FINISHED.value, AttemptStatus.EXPIRED.value)
+        return self.status in (
+            AttemptStatus.FINISHED.value,
+            AttemptStatus.EXPIRED.value,
+            AttemptStatus.CANCELLED.value,
+        )
 
     @property
     def is_active(self) -> bool:

@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import io
 import re
+from typing import TYPE_CHECKING, Any
 
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InputMediaDocument, InputMediaPhoto, Message
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    InputMediaDocument,
+    InputMediaPhoto,
+    Message,
+)
 
 from core.logging import get_logger
+from modules.media.watermark import apply_student_watermark
+
+if TYPE_CHECKING:
+    from modules.identity.models import User
 
 log = get_logger(__name__)
 
@@ -138,7 +151,56 @@ async def safe_delete(message: Message) -> None:
         pass
 
 
-async def _send_media_chunk(message: Message, chunk: list) -> int:
+_WATERMARK_CACHE: dict[tuple[int, int], bytes] = {}
+
+
+async def _get_photo_media(
+    message: Message,
+    item: Any,
+    user: User | None,
+) -> str | BufferedInputFile:
+    """
+    Rasm manbasini qaytaradi: o'quvchi ma'lumotlari berilgan bo'lsa
+    suv belgisi (anti-cheat watermark) tushiriladi, aks holda asl file_id qaytadi.
+    """
+    if user is None or not getattr(user, "full_name", None) or message.bot is None:
+        return item.file_id
+
+    cache_key = (user.telegram_id, getattr(item, "id", hash(item.file_id)))
+    if cache_key in _WATERMARK_CACHE:
+        return BufferedInputFile(
+            _WATERMARK_CACHE[cache_key],
+            filename=f"test_p{getattr(item, 'order_index', 1)}.jpg",
+        )
+
+    try:
+        file_info = await message.bot.get_file(item.file_id)
+        if file_info.file_path:
+            dest = io.BytesIO()
+            await message.bot.download_file(file_info.file_path, destination=dest)
+            raw_bytes = dest.getvalue()
+            if raw_bytes:
+                wm_bytes = apply_student_watermark(raw_bytes, user.full_name, user.telegram_id)
+                if len(_WATERMARK_CACHE) > 100:
+                    _WATERMARK_CACHE.pop(next(iter(_WATERMARK_CACHE)))
+                _WATERMARK_CACHE[cache_key] = wm_bytes
+                return BufferedInputFile(
+                    wm_bytes,
+                    filename=f"test_p{getattr(item, 'order_index', 1)}.jpg",
+                )
+    except Exception as error:
+        log.warning("Rasmga suv belgisi tushirilmadi (%s), asl rasm ishlatiladi", error)
+
+    return item.file_id
+
+
+async def _send_media_chunk(
+    message: Message,
+    chunk: list,
+    *,
+    user: User | None = None,
+    protect_content: bool = True,
+) -> int:
     """Bir xil turdagi fayllar (faqat rasmlar yoki faqat hujjatlar) guruhini yuboradi."""
     if not chunk:
         return 0
@@ -146,9 +208,18 @@ async def _send_media_chunk(message: Message, chunk: list) -> int:
     if len(chunk) == 1:
         item = chunk[0]
         if item.media_type == "document":
-            await message.answer_document(item.file_id, caption=item.caption)
+            await message.answer_document(
+                item.file_id,
+                caption=item.caption,
+                protect_content=protect_content,
+            )
         else:
-            await message.answer_photo(item.file_id, caption=item.caption)
+            photo_media = await _get_photo_media(message, item, user)
+            await message.answer_photo(
+                photo_media,
+                caption=item.caption,
+                protect_content=protect_content,
+            )
         return 1
 
     try:
@@ -158,11 +229,13 @@ async def _send_media_chunk(message: Message, chunk: list) -> int:
                 for item in chunk
             ]
         else:
-            group_media = [
-                InputMediaPhoto(media=item.file_id, caption=item.caption)
-                for item in chunk
-            ]
-        await message.answer_media_group(media=group_media)
+            group_media = []
+            for item in chunk:
+                photo_media = await _get_photo_media(message, item, user)
+                group_media.append(
+                    InputMediaPhoto(media=photo_media, caption=item.caption)
+                )
+        await message.answer_media_group(media=group_media, protect_content=protect_content)
         return len(chunk)
 
     except TelegramBadRequest as error:
@@ -171,21 +244,40 @@ async def _send_media_chunk(message: Message, chunk: list) -> int:
         for item in chunk:
             try:
                 if item.media_type == "document":
-                    await message.answer_document(item.file_id, caption=item.caption)
+                    await message.answer_document(
+                        item.file_id,
+                        caption=item.caption,
+                        protect_content=protect_content,
+                    )
                 else:
-                    await message.answer_photo(item.file_id, caption=item.caption)
+                    photo_media = await _get_photo_media(message, item, user)
+                    await message.answer_photo(
+                        photo_media,
+                        caption=item.caption,
+                        protect_content=protect_content,
+                    )
                 count += 1
             except Exception as inner_err:
                 log.warning("Fayl/rasm yuborilmadi: %s", inner_err)
         return count
 
 
-async def send_media_group(message: Message, media_items: list) -> int:
+async def send_media_group(
+    message: Message,
+    media_items: list,
+    *,
+    user: User | None = None,
+    protect_content: bool = True,
+) -> int:
     """
     Test rasmlari va fayllarini (PDF, Word va h.k.) yuboradi.
 
     Telegram qoidasiga ko'ra albomda rasm va hujjatni aralashtirib bo'lmaydi.
     Shuning uchun rasmlar va hujjatlar alohida guruhlarga ajratiladi.
+
+    O'quvchi (`user`) uzatilsa, har bir rasmga shaxsiy suv belgisi
+    (Anti-cheat watermark) tushiriladi va `protect_content=True` orqali
+    skrinshot va forwarddan to'siladi.
 
     Returns:
         Yuborilgan fayllar soni.
@@ -199,12 +291,18 @@ async def send_media_group(message: Message, media_items: list) -> int:
 
     for start in range(0, len(photos), MEDIA_GROUP_LIMIT):
         sent += await _send_media_chunk(
-            message, photos[start : start + MEDIA_GROUP_LIMIT]
+            message,
+            photos[start : start + MEDIA_GROUP_LIMIT],
+            user=user,
+            protect_content=protect_content,
         )
 
     for start in range(0, len(documents), MEDIA_GROUP_LIMIT):
         sent += await _send_media_chunk(
-            message, documents[start : start + MEDIA_GROUP_LIMIT]
+            message,
+            documents[start : start + MEDIA_GROUP_LIMIT],
+            user=user,
+            protect_content=protect_content,
         )
 
     return sent

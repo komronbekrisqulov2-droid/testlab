@@ -72,6 +72,7 @@ RESULT_COLUMNS: tuple[Column, ...] = (
     Column("Xato", 8),
     Column("Javobsiz", 10),
     Column("Holat", 12),
+    Column("Anti-cheat nazorati", 24, LEFT),
     Column("Javoblari", 34, LEFT),
     Column("Topshirgan vaqti", 19),
 )
@@ -262,6 +263,17 @@ class TestReportBuilder:
 
         for order, attempt in enumerate(attempts, start=1):
             user = attempt.user
+            switches = getattr(attempt, "tab_switches_count", 0)
+            is_disq = getattr(attempt, "is_disqualified", False)
+
+            if is_disq or switches >= 3:
+                anti_cheat_text = f"🚨 Qoidabuzar ({switches} marta chiqdi - Bekor qilindi)"
+            elif switches > 0:
+                anti_cheat_text = f"🟡 Shubhali ({switches} marta chiqdi)"
+            else:
+                anti_cheat_text = "🟢 Halol (0)"
+
+            status_text = "Bekor qilindi" if is_disq else ("O'tdi" if attempt.is_passed else "O'tmadi")
 
             _write_row(
                 sheet,
@@ -278,13 +290,14 @@ class TestReportBuilder:
                     attempt.correct_count,
                     attempt.wrong_count,
                     attempt.skipped_count,
-                    "O'tdi" if attempt.is_passed else "O'tmadi",
+                    status_text,
+                    anti_cheat_text,
                     (attempt.submitted_key or "").upper() or "—",
                     fmt_datetime(attempt.finished_at),
                 ),
                 row=header_row + order,
-                fill=PASS_FILL if attempt.is_passed else FAIL_FILL,
-                mono_index=13,
+                fill=FAIL_FILL if (is_disq or not attempt.is_passed) else PASS_FILL,
+                mono_index=14,
                 percent_index=7,
             )
 

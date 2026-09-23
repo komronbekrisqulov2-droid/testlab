@@ -61,11 +61,16 @@ async def send_result(
     certificates = CertificateService(session)
     can_certify, _ = await certificates.can_issue(submit.attempt, submit.test)
 
-    caption = uz.result(submit)
+    hide_keys = not submit.test.show_answers or (
+        submit.test.ends_at is not None and not submit.test.already_ended
+    )
+
+    caption = uz.result(submit, hide_keys=hide_keys)
     keyboard = result_keyboard(
         submit.test.id,
         attempt_id=submit.attempt.id,
         can_get_certificate=can_certify,
+        hide_analysis=hide_keys,
     )
 
     await message.answer(caption, reply_markup=keyboard)
@@ -312,6 +317,17 @@ async def view_attempt_analysis(
 
     if attempt.user_id != user.id and not user.is_admin:
         await safe_answer(callback, uz.NO_PERMISSION, alert=True)
+        return
+
+    test = attempt.test
+    if test and (not test.show_answers or (test.ends_at is not None and not test.already_ended)):
+        from core.datetime_utils import fmt_datetime
+        msg = "🔒 Ushbu test hali yakunlanmagan. To'g'ri kalitlar va savollar tahlili "
+        if test.ends_at:
+            msg += f"test muddati tugagach ({fmt_datetime(test.ends_at)}) ochiladi."
+        else:
+            msg += "test yakunlangach ochiladi."
+        await safe_answer(callback, msg, alert=True)
         return
 
     from modules.catalog.service import CatalogService

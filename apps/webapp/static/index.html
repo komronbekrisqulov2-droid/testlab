@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="uz">
 <head>
   <meta charset="UTF-8">
@@ -559,9 +559,40 @@
       from { transform: scale(0.92); opacity: 0; }
       to { transform: scale(1); opacity: 1; }
     }
+
+    /* Anti-cheat Dynamic Watermark */
+    .watermark-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+      z-index: 90;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-around;
+      opacity: 0.07;
+      user-select: none;
+      transform: rotate(-20deg) scale(1.3);
+    }
+
+    .watermark-row {
+      display: flex;
+      justify-content: space-around;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
   </style>
 </head>
 <body>
+  <!-- Dynamic Security Watermark -->
+  <div class="watermark-container" id="watermarkContainer"></div>
 
   <!-- Top Bar -->
   <header>
@@ -658,6 +689,18 @@
     </div>
   </div>
 
+  <!-- Anti-Cheat Modal (Strikes) -->
+  <div class="modal-backdrop" id="antiCheatModal" style="align-items: center; z-index: 1000;">
+    <div class="confirm-modal" id="antiCheatModalCard" onclick="event.stopPropagation()">
+      <div id="antiCheatIcon" style="font-size: 46px;">⚠️</div>
+      <h3 id="antiCheatTitle" style="color: var(--warning);">Ogohlantirish!</h3>
+      <p id="antiCheatDesc" style="color: var(--hint); font-size: 14px; line-height: 1.6;"></p>
+      <div id="antiCheatActions" style="margin-top: 8px; width: 100%;">
+        <button class="nav-btn primary" id="antiCheatAckBtn" onclick="closeAntiCheatModal()" style="width: 100%; padding: 14px;">Tushundim, davom etaman</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const tg = window.Telegram?.WebApp;
     if (tg) {
@@ -728,6 +771,7 @@
 
       renderQuestion();
       renderMatrix();
+      initWatermark();
     }
 
     function updateMediaDisplay() {
@@ -958,7 +1002,9 @@
         const payload = {
           answers: resultKey,
           user_id: tg?.initDataUnsafe?.user?.id || null,
-          init_data: tg?.initData || ""
+          init_data: tg?.initData || "",
+          tab_switches: antiCheatWarnings,
+          disqualified: isDisqualified
         };
 
         const res = await fetch(`/api/test/${testData.id}/submit`, {
@@ -969,9 +1015,20 @@
 
         const data = await res.json();
         if (res.ok && data.ok) {
+          isTestCompleted = true;
           if (timerInterval) clearInterval(timerInterval);
 
-          if (data.already_answered) {
+          if (data.disqualified) {
+            modalBox.innerHTML = `
+              <div style="font-size: 46px;">🚨</div>
+              <h3 style="color: var(--danger);">Test bekor qilindi (0 ball)</h3>
+              <div style="background: rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.3); padding: 16px; border-radius: 14px; margin: 10px 0; text-align: left; font-size: 14px; line-height: 1.6;">
+                ⚠️ <b>Qoidabuzarlik sababi:</b> Siz test paytida <b>${antiCheatWarnings} marta</b> test oynasidan chiqdingiz.<br><br>
+                Anti-cheat qoidalariga binoan test 0 ball bilan yakunlandi va o‘qituvchi hisobotiga belgi tushdi.
+              </div>
+              <button class="nav-btn primary" onclick="closeWebApp()" style="margin-top: 10px; width: 100%; padding: 14px; background: #dc2626;">Botga qaytish ↩️</button>
+            `;
+          } else if (data.already_answered) {
             modalBox.innerHTML = `
               <div style="font-size: 46px;">ℹ️</div>
               <h3 style="color: #60a5fa;">Test avval topshirilgan</h3>
@@ -990,7 +1047,7 @@
                 📊 Natija: <b>${data.score} / ${data.total}</b> (${data.percentage}%)<br>
                 ${data.passed ? '✅ <b>Tabriklaymiz, muvaffaqiyatli o‘tdingiz!</b>' : '⚠️ <i>O‘tish balliga yetmadi</i>'}
               </div>
-              <p style="color: var(--hint); font-size: 13px;">To‘liq hisobot va tahlil bot chatiga yuborildi.</p>
+              <p style="color: var(--hint); font-size: 13px;">To‘liq hisobot va ball bot chatiga yuborildi.</p>
               <button class="nav-btn primary" onclick="closeWebApp()" style="margin-top: 10px; width: 100%; padding: 14px;">Botga qaytish ↩️</button>
             `;
           }
@@ -1019,10 +1076,38 @@
       }
     }
 
-    // Keyboard navigation for desktop
+    // Dynamic Security Watermark (Anti-Leak / 2-telefon va skrinshotga qarshi)
+    function initWatermark() {
+      const user = tg?.initDataUnsafe?.user;
+      const firstName = user?.first_name || '';
+      const lastName = user?.last_name || '';
+      const fullName = (firstName + ' ' + lastName).trim() || user?.username || "O'quvchi";
+      const idPart = user?.id ? `ID: ${user.id}` : 'ID: Himoyalangan';
+      const markText = `${fullName} • ${idPart} • TESTLAB`;
+
+      const container = document.getElementById('watermarkContainer');
+      if (!container) return;
+      container.innerHTML = '';
+      for (let i = 0; i < 12; i++) {
+        const row = document.createElement('div');
+        row.className = 'watermark-row';
+        row.textContent = `${markText}       ${markText}       ${markText}`;
+        container.appendChild(row);
+      }
+    }
+
+    // Keyboard navigation & anti-cheat shortcuts
     document.addEventListener('keydown', (e) => {
+      // Skrinshot va nusxalash tugmalarini bloklash
+      if (e.key === 'PrintScreen' || e.key === 'F12' ||
+          (e.ctrlKey && ['c', 'v', 'u', 's', 'p', 'a'].includes(e.key.toLowerCase())) ||
+          (e.ctrlKey && e.shiftKey && ['i', 'j', 'c'].includes(e.key.toLowerCase()))) {
+        e.preventDefault();
+        return false;
+      }
+
       const key = e.key.toUpperCase();
-      if (['A', 'B', 'C', 'D', 'E'].includes(key)) {
+      if (['A', 'B', 'C', 'D', 'E'].includes(key) && !isDisqualified && !isTestCompleted) {
         selectOption(key);
       } else if (e.key === 'ArrowRight') {
         nextQuestion();
@@ -1030,6 +1115,138 @@
         prevQuestion();
       }
     });
+
+    let isTestCompleted = false;
+    let isDisqualified = false;
+    let antiCheatWarnings = 0;
+    let lastBlurTime = 0;
+
+    // Matn nusxalash va kontekst menyuni to'liq to'sish
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
+    document.addEventListener('copy', (e) => e.preventDefault());
+    document.addEventListener('cut', (e) => e.preventDefault());
+    document.addEventListener('dragstart', (e) => e.preventDefault());
+
+    // Anti-Cheat: Ilovadan chiqish (Focus Tracking: Gemini, brauzer, boshqa oynaga o'tish)
+    function onUserLeftApp() {
+      if (isTestCompleted || isDisqualified) return;
+      const now = Date.now();
+      if (now - lastBlurTime < 1500) return; // 1.5 soniyalik cooldown (dubl sanalmasligi uchun)
+      lastBlurTime = now;
+
+      antiCheatWarnings++;
+      if (tg && tg.HapticFeedback) {
+        try {
+          if (antiCheatWarnings >= 3) {
+            tg.HapticFeedback.notificationOccurred('error');
+          } else {
+            tg.HapticFeedback.notificationOccurred('warning');
+          }
+        } catch(e) {}
+      }
+
+      if (antiCheatWarnings >= 3) {
+        triggerDisqualification();
+      }
+    }
+
+    function onUserReturnedApp() {
+      if (isTestCompleted && !isDisqualified) return;
+      if (antiCheatWarnings > 0) {
+        showAntiCheatModal();
+      }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        onUserLeftApp();
+      } else {
+        onUserReturnedApp();
+      }
+    });
+
+    window.addEventListener('blur', () => {
+      onUserLeftApp();
+    });
+
+    window.addEventListener('focus', () => {
+      onUserReturnedApp();
+    });
+
+    function showAntiCheatModal() {
+      const modal = document.getElementById('antiCheatModal');
+      const icon = document.getElementById('antiCheatIcon');
+      const title = document.getElementById('antiCheatTitle');
+      const desc = document.getElementById('antiCheatDesc');
+      const actions = document.getElementById('antiCheatActions');
+
+      if (antiCheatWarnings === 1) {
+        icon.textContent = '⚠️';
+        title.textContent = '1-ogohlantirish (1/3)';
+        title.style.color = '#f59e0b';
+        desc.innerHTML = `Siz test oynasidan chiqdingiz!<br>Test yechish paytida <b>Gemini, ChatGPT yoki brauzerga</b> o‘tish taqiqlanadi.<br><br><i>Bu harakat o‘qituvchi hisobotida aks etadi!</i>`;
+        actions.innerHTML = `<button class="nav-btn primary" onclick="closeAntiCheatModal()" style="width: 100%; padding: 14px;">Tushundim, davom etaman</button>`;
+      } else if (antiCheatWarnings === 2) {
+        icon.textContent = '🟠';
+        title.textContent = 'Jiddiy ogohlantirish (2/3)!';
+        title.style.color = '#f97316';
+        desc.innerHTML = `<b>Diqqat!</b> Siz 2-marta test oynasidan chiqdingiz.<br><br><span style="color:#ef4444; font-weight:700;">Yana 1 marta chiqsangiz, testingiz darhol bekor qilinadi va 0 ball qo‘yiladi!</span>`;
+        actions.innerHTML = `<button class="nav-btn primary" onclick="closeAntiCheatModal()" style="width: 100%; padding: 14px; background: #ea580c;">Qoidaga rioya qilaman</button>`;
+      } else if (antiCheatWarnings >= 3) {
+        icon.textContent = '🚨';
+        title.textContent = 'Qoidabuzarlik! Test bekor qilindi (3/3)';
+        title.style.color = '#ef4444';
+        desc.innerHTML = `Siz test jarayonida <b>3 marta</b> ilovadan chiqdingiz.<br><br>Anti-cheat qoidalariga asosan testingiz <b>avtomatik bekor qilindi va 0 ball</b> qo‘yildi.<br>O‘qituvchi hisobotiga qoidabuzarlik yozildi.`;
+        actions.innerHTML = `<button class="nav-btn primary" onclick="closeWebApp()" style="width: 100%; padding: 14px; background: #dc2626;">Botga qaytish ↩️</button>`;
+      }
+
+      modal.classList.add('open');
+    }
+
+    function closeAntiCheatModal() {
+      if (antiCheatWarnings >= 3) return; // 3-ogohlantirishda yopib bo'lmaydi
+      document.getElementById('antiCheatModal').classList.remove('open');
+    }
+
+    function triggerDisqualification() {
+      if (isDisqualified) return;
+      isDisqualified = true;
+      isTestCompleted = true;
+      if (timerInterval) clearInterval(timerInterval);
+
+      // Savollarni tanlashni bloklash
+      document.querySelectorAll('.option-item').forEach(el => el.style.pointerEvents = 'none');
+      const finishBtn = document.getElementById('finishBtn');
+      if (finishBtn) finishBtn.disabled = true;
+
+      // 0 ball bilan avtomatik yuborish
+      autoSubmitDisqualified();
+    }
+
+    async function autoSubmitDisqualified() {
+      let resultKey = "";
+      for (let i = 0; i < testData.questionsCount; i++) {
+        resultKey += (answers[i] || "-").toLowerCase();
+      }
+
+      const payload = {
+        answers: resultKey,
+        user_id: tg?.initDataUnsafe?.user?.id || null,
+        init_data: tg?.initData || "",
+        tab_switches: antiCheatWarnings,
+        disqualified: true
+      };
+
+      try {
+        await fetch(`/api/test/${testData.id}/submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } catch(e) {
+        console.warn('Auto submit disqualified failed', e);
+      }
+    }
 
     // Start
     loadTest();

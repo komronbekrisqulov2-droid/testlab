@@ -12,7 +12,11 @@ from infrastructure.database.repository import BaseRepository, Page
 from modules.assessment.models import Attempt, AttemptStatus
 
 #  Yakunlangan deb hisoblanadigan holatlar
-FINISHED_STATUSES = (AttemptStatus.FINISHED.value, AttemptStatus.EXPIRED.value)
+FINISHED_STATUSES = (
+    AttemptStatus.FINISHED.value,
+    AttemptStatus.EXPIRED.value,
+    AttemptStatus.CANCELLED.value,
+)
 
 
 class AttemptRepository(BaseRepository[Attempt]):

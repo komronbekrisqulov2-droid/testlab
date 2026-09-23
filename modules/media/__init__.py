@@ -12,6 +12,6 @@ qaytaradi. Shu sababli uni botsiz sinash mumkin.
     certificate  sertifikat (QR kod bilan)
 """
 
-from modules.media import certificate, fonts, poster, result_card, theme
+from modules.media import certificate, fonts, poster, result_card, theme, watermark
 
-__all__ = ("fonts", "theme", "result_card", "poster", "certificate")
+__all__ = ("fonts", "theme", "result_card", "poster", "certificate", "watermark")
