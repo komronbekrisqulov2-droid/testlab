@@ -588,6 +588,36 @@
       letter-spacing: 2px;
       text-transform: uppercase;
     }
+
+    /* Toast Notification */
+    .toast-notification {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      background: rgba(30, 41, 59, 0.95);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: #f8fafc;
+      padding: 10px 18px;
+      border-radius: 99px;
+      font-size: 13px;
+      font-weight: 600;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+      z-index: 9999;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 90%;
+      text-align: center;
+    }
+    .toast-notification.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
   </style>
 </head>
 <body>
@@ -732,9 +762,26 @@
     const lastPart = pathParts[pathParts.length - 1];
     const testId = (lastPart && !isNaN(lastPart)) ? lastPart : (urlParams.get('test') || '1');
 
+    function showToast(message, duration = 3500) {
+      let toast = document.getElementById('appToast');
+      if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'appToast';
+        toast.className = 'toast-notification';
+        document.body.appendChild(toast);
+      }
+      toast.innerHTML = message;
+      toast.classList.add('show');
+      if (toast._timer) clearTimeout(toast._timer);
+      toast._timer = setTimeout(() => {
+        toast.classList.remove('show');
+      }, duration);
+    }
+
     async function loadTest() {
+      const userId = tg?.initDataUnsafe?.user?.id || urlParams.get('user_id') || '';
       try {
-        const res = await fetch(`/api/test/${testId}`);
+        const res = await fetch(`/api/test/${testId}?user_id=${userId}`);
         if (res.ok) {
           testData = await res.json();
         } else {
@@ -842,7 +889,11 @@
 
     function renderQuestion() {
       const qNum = currentIndex + 1;
-      document.getElementById('qBadge').textContent = `SAVOL ${qNum} / ${testData.questionsCount}`;
+      let badgeText = `SAVOL ${qNum} / ${testData.questionsCount}`;
+      if (testData.questionOrder && testData.questionOrder[currentIndex]) {
+        badgeText = `SAVOL ${qNum} (Asl #${testData.questionOrder[currentIndex]}) / ${testData.questionsCount}`;
+      }
+      document.getElementById('qBadge').textContent = badgeText;
       
       const flagBtn = document.getElementById('flagBtn');
       if (flags[currentIndex]) {
@@ -951,8 +1002,10 @@
           closeMatrixModal();
         };
 
+        const origNum = (testData.questionOrder && testData.questionOrder[i]) ? testData.questionOrder[i] : null;
         item.innerHTML = `
           <span>${i + 1}</span>
+          ${origNum ? `<span style="font-size:9px;opacity:0.7;display:block;margin-top:-2px;">#${origNum}</span>` : ''}
           ${isAnswered ? `<span class="matrix-letter">${answers[i]}</span>` : ''}
         `;
         grid.appendChild(item);
@@ -1119,7 +1172,9 @@
     let isTestCompleted = false;
     let isDisqualified = false;
     let antiCheatWarnings = 0;
-    let lastBlurTime = 0;
+    let leftAppTime = 0;
+    let isCurrentlyAway = false;
+    const GRACE_PERIOD_MS = 4000; // 4 soniya: SMS/qo'ng'iroq/paneldan tezkor qaytish imtiyozi
 
     // Matn nusxalash va kontekst menyuni to'liq to'sish
     document.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -1130,11 +1185,37 @@
     // Anti-Cheat: Ilovadan chiqish (Focus Tracking: Gemini, brauzer, boshqa oynaga o'tish)
     function onUserLeftApp() {
       if (isTestCompleted || isDisqualified) return;
-      const now = Date.now();
-      if (now - lastBlurTime < 1500) return; // 1.5 soniyalik cooldown (dubl sanalmasligi uchun)
-      lastBlurTime = now;
+      if (isCurrentlyAway) return;
+      isCurrentlyAway = true;
+      leftAppTime = Date.now();
+    }
 
+    function onUserReturnedApp() {
+      if (isTestCompleted && !isDisqualified) return;
+      if (!isCurrentlyAway) return;
+      isCurrentlyAway = false;
+
+      const now = Date.now();
+      const awayDurationMs = now - (leftAppTime || now);
+      leftAppTime = 0;
+
+      // Agar juda qisqa bo'lsa (< 800ms) - tasodifiy teginish yoki mikro-blur, e'tiborsiz qoldiramiz
+      if (awayDurationMs < 800) return;
+
+      // Imtiyozli muddat: 4 soniyadan kam (kiruvchi qo'ng'iroqni rad etish, bildirishnomani yopish)
+      if (awayDurationMs < GRACE_PERIOD_MS) {
+        const secText = (awayDurationMs / 1000).toFixed(1);
+        showToast(`⚡ <b>Tezkor qaytish (${secText}s):</b> Imtiyozli vaqt sababli ogohlantirish berilmadi. Iltimos, testdan chiqmang!`);
+        if (tg && tg.HapticFeedback) {
+          try { tg.HapticFeedback.notificationOccurred('warning'); } catch(e) {}
+        }
+        return;
+      }
+
+      // 4 soniyadan ortiq chiqib ketish: bu haqiqiy boshqa ilovaga o'tish
+      const awaySec = Math.round(awayDurationMs / 1000);
       antiCheatWarnings++;
+
       if (tg && tg.HapticFeedback) {
         try {
           if (antiCheatWarnings >= 3) {
@@ -1147,13 +1228,9 @@
 
       if (antiCheatWarnings >= 3) {
         triggerDisqualification();
-      }
-    }
-
-    function onUserReturnedApp() {
-      if (isTestCompleted && !isDisqualified) return;
-      if (antiCheatWarnings > 0) {
-        showAntiCheatModal();
+        showAntiCheatModal(awaySec);
+      } else {
+        showAntiCheatModal(awaySec);
       }
     }
 
@@ -1173,24 +1250,26 @@
       onUserReturnedApp();
     });
 
-    function showAntiCheatModal() {
+    function showAntiCheatModal(awaySec = 0) {
       const modal = document.getElementById('antiCheatModal');
       const icon = document.getElementById('antiCheatIcon');
       const title = document.getElementById('antiCheatTitle');
       const desc = document.getElementById('antiCheatDesc');
       const actions = document.getElementById('antiCheatActions');
 
+      const timeInfo = awaySec > 0 ? ` (davomiyligi: <b>${awaySec} soniya</b>)` : '';
+
       if (antiCheatWarnings === 1) {
         icon.textContent = '⚠️';
         title.textContent = '1-ogohlantirish (1/3)';
         title.style.color = '#f59e0b';
-        desc.innerHTML = `Siz test oynasidan chiqdingiz!<br>Test yechish paytida <b>Gemini, ChatGPT yoki brauzerga</b> o‘tish taqiqlanadi.<br><br><i>Bu harakat o‘qituvchi hisobotida aks etadi!</i>`;
+        desc.innerHTML = `Siz test oynasidan chiqdingiz${timeInfo}!<br>Test yechish paytida <b>Gemini, ChatGPT yoki brauzerga</b> o‘tish taqiqlanadi.<br><br><i>Bu harakat o‘qituvchi hisobotida aks etadi!</i>`;
         actions.innerHTML = `<button class="nav-btn primary" onclick="closeAntiCheatModal()" style="width: 100%; padding: 14px;">Tushundim, davom etaman</button>`;
       } else if (antiCheatWarnings === 2) {
         icon.textContent = '🟠';
         title.textContent = 'Jiddiy ogohlantirish (2/3)!';
         title.style.color = '#f97316';
-        desc.innerHTML = `<b>Diqqat!</b> Siz 2-marta test oynasidan chiqdingiz.<br><br><span style="color:#ef4444; font-weight:700;">Yana 1 marta chiqsangiz, testingiz darhol bekor qilinadi va 0 ball qo‘yiladi!</span>`;
+        desc.innerHTML = `<b>Diqqat!</b> Siz 2-marta test oynasidan chiqdingiz${timeInfo}.<br><br><span style="color:#ef4444; font-weight:700;">Yana 1 marta chiqsangiz, testingiz darhol bekor qilinadi va 0 ball qo‘yiladi!</span>`;
         actions.innerHTML = `<button class="nav-btn primary" onclick="closeAntiCheatModal()" style="width: 100%; padding: 14px; background: #ea580c;">Qoidaga rioya qilaman</button>`;
       } else if (antiCheatWarnings >= 3) {
         icon.textContent = '🚨';

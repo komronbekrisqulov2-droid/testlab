@@ -164,8 +164,14 @@ async def _ensure_columns() -> None:
                     await connection.execute(text("ALTER TABLE tests ADD COLUMN channel_message_id INTEGER"))
                 if "results_posted_at" not in cols:
                     await connection.execute(text("ALTER TABLE tests ADD COLUMN results_posted_at DATETIME"))
+                if "is_randomized" not in cols:
+                    await connection.execute(text("ALTER TABLE tests ADD COLUMN is_randomized BOOLEAN DEFAULT 0"))
+                if "random_questions_count" not in cols:
+                    await connection.execute(text("ALTER TABLE tests ADD COLUMN random_questions_count INTEGER"))
+                if "classroom_id" not in cols:
+                    await connection.execute(text("ALTER TABLE tests ADD COLUMN classroom_id INTEGER"))
 
-            # attempts jadvalidagi anti-cheat ustunlari
+            # attempts jadvalidagi anti-cheat va randomizatsiya ustunlari
             res_att = await connection.execute(text("PRAGMA table_info(attempts)"))
             att_cols = {row[1] for row in res_att.fetchall()}
             if att_cols:
@@ -173,6 +179,10 @@ async def _ensure_columns() -> None:
                     await connection.execute(text("ALTER TABLE attempts ADD COLUMN tab_switches_count INTEGER DEFAULT 0"))
                 if "is_disqualified" not in att_cols:
                     await connection.execute(text("ALTER TABLE attempts ADD COLUMN is_disqualified BOOLEAN DEFAULT 0"))
+                if "question_order" not in att_cols:
+                    await connection.execute(text("ALTER TABLE attempts ADD COLUMN question_order VARCHAR(512)"))
+                if "effective_key" not in att_cols:
+                    await connection.execute(text("ALTER TABLE attempts ADD COLUMN effective_key VARCHAR(256)"))
         except Exception as err:
             log.debug("Ustunlarni tekshirishda xatolik: %s", err)
 

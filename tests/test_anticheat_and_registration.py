@@ -5,8 +5,14 @@ Ro'yxatdan o'tish validatsiyasi va Anti-cheat (watermark, protect_content) testl
 from __future__ import annotations
 
 import io
+import sys
 import unittest
+from pathlib import Path
 from PIL import Image
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from apps.bot.handlers.shared.start import _validate_full_name
 from apps.bot.texts import uz

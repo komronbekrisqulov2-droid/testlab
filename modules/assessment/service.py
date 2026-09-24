@@ -156,6 +156,18 @@ class AssessmentService:
                     ),
                 )
 
+        if test.classroom_id is not None:
+            from modules.classroom.repository import ClassroomRepository
+            cls_repo = ClassroomRepository(self.session)
+            is_mem = await cls_repo.is_member(test.classroom_id, user.id)
+            if not is_mem and test.author_id != user.id and not user.is_admin:
+                cls_obj = await cls_repo.get(test.classroom_id)
+                cls_name = cls_obj.name if cls_obj else "Yopiq sinf"
+                raise TestNotAvailableError(
+                    f"🔒 Ushbu test faqat <b>«{cls_name}»</b> guruhi o'quvchilari uchun mo'ljallangan.",
+                    hint="Guruhga a'zo bo'lish uchun o'qituvchingizdan taklif havolasini oling.",
+                )
+
     # ==================================================================
     #  VAQT CHEGARASI
     # ==================================================================
@@ -179,9 +191,6 @@ class AssessmentService:
         Returns:
             Boshlangan urinish, yoki None (vaqt cheklanmagan bo'lsa).
         """
-        if test.time_limit_sec <= 0:
-            return None
-
         #  Yakunlanmagan urinish bormi? Bo'lsa davom ettiramiz —
         #  o'quvchi tugmani ikki marta bosgani vaqtni qaytadan
         #  boshlashi kerak emas.
@@ -189,14 +198,38 @@ class AssessmentService:
         if active is not None:
             return active
 
+        if test.time_limit_sec <= 0 and not test.is_randomized:
+            return None
+
         now = utcnow()
+        deadline = now + timedelta(seconds=test.time_limit_sec) if test.time_limit_sec > 0 else None
+
+        question_order_str = None
+        effective_key = None
+        max_score = len(test.key_letters) or 1
+
+        if test.is_randomized and test.key_letters:
+            import random
+            total_q = len(test.key_letters)
+            if test.random_questions_count and 0 < test.random_questions_count < total_q:
+                k = test.random_questions_count
+                order = random.sample(range(1, total_q + 1), k)
+            else:
+                order = list(range(1, total_q + 1))
+                random.shuffle(order)
+            question_order_str = ",".join(map(str, order))
+            effective_key = "".join(test.key_letters[i - 1] for i in order)
+            max_score = len(order)
+
         return await self.attempts.create(
             test_id=test.id,
             user_id=user.id,
             status=AttemptStatus.IN_PROGRESS.value,
             started_at=now,
-            deadline=now + timedelta(seconds=test.time_limit_sec),
-            max_score=len(test.key_letters) or 1,
+            deadline=deadline,
+            max_score=max_score,
+            question_order=question_order_str,
+            effective_key=effective_key,
         )
 
     async def expire(self, attempt: Attempt) -> Attempt:
@@ -286,7 +319,12 @@ class AssessmentService:
                 ),
             )
 
-        key = test.key_letters
+        # Random test bo'lsa, aynan shu urinishga biriktirilgan aralashtirilgan kalitni olamiz
+        if active is not None and active.effective_key:
+            key = active.effective_key
+        else:
+            key = test.key_letters
+
         expected = len(key)
 
         parsed = parse_answers(raw, expected=expected)
@@ -368,13 +406,15 @@ class AssessmentService:
 
         # Xatolar daftariga yozish (faqat diskvalifikatsiya bo'lmagan bo'lsa)
         if not is_disqualified:
-            for q in results:
+            order_map = [int(x) for x in active.question_order.split(",") if x.isdigit()] if (active and active.question_order) else None
+            for idx, q in enumerate(results):
                 if q.verdict is not True:
+                    real_q_num = order_map[idx] if (order_map and idx < len(order_map)) else q.number
                     mistake = StudentMistake(
                         user_id=user.id,
                         test_id=test.id,
                         attempt_id=attempt.id,
-                        question_number=q.number,
+                        question_number=real_q_num,
                         given_answer=q.given or "-",
                         correct_answer=q.correct,
                         is_resolved=False,

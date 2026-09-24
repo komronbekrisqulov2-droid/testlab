@@ -103,18 +103,30 @@ async def open_test(
     #  Vaqt hisobi rasmlar YUBORILGACH boshlanadi — albom sekin yetib
     #  borsa, o'quvchi hali savolni ko'rmasidan vaqti ketib qolmasin.
     #  Vaqt chegarasi yo'q testda hech narsa yaratilmaydi.
-    await assessment.begin(test, user)
+    attempt = await assessment.begin(test, user)
 
     #  So'ng yagona kartochka: ma'lumot + tugma
-    #
-    #  Holat DARHOL o'rnatiladi — o'quvchi tugmani bosmasdan to'g'ridan-
-    #  to'g'ri javoblarini yozsa ham qabul qilinishi kerak. Tugma esa
-    #  "qanday yuboraman?" degan savolga javob beradi.
     await state.set_state(Answering.waiting)
     await state.update_data(test_id=test.id)
 
+    card_text = uz.test_card(test, len(media))
+    if attempt and attempt.question_order:
+        orders = [int(x) for x in attempt.question_order.split(",") if x.isdigit()]
+        order_preview = ", ".join(f"#{x}" for x in orders[:15])
+        if len(orders) > 15:
+            order_preview += f" ... (+yana {len(orders) - 15} ta)"
+
+        card_text += (
+            f"\n\n🎲 <b>RANDOM REJIM (Ko'chirishdan himoyalangan):</b>\n"
+            f"Sizga umumiy testdan <b>{len(orders)} ta</b> savol tushdi.\n"
+            f"📋 <b>Sizning savollar tartibingiz:</b>\n"
+            f"{order_preview}\n\n"
+            f"💡 <i>Javoblarni yuborayotganda 1-savol o'rniga ro'yxatingizdagi 1-savol (#{orders[0]}) "
+            f"javobini, 2-savol o'rniga 2-savol (#{orders[1]}) javobini yozing.</i>"
+        )
+
     await message.answer(
-        uz.test_card(test, len(media)),
+        card_text,
         reply_markup=test_card_keyboard(test.id, has_images=bool(media)),
         protect_content=True,
     )
@@ -261,6 +273,16 @@ async def one_shot(
         return
 
     assessment = AssessmentService(session)
+
+    if test.is_randomized:
+        active = await assessment.attempts.get_active(user.id, test.id)
+        if active is None:
+            await message.answer(
+                "🎲 <b>Diqqat: Ushbu testda savollar aralashtirilgan (Random rejim)!</b>\n\n"
+                "To'g'ri javob berish uchun avval testni ochib, sizga tushgan savollar ro'yxatini ko'ring.",
+            )
+            await open_test(message, test, user, session, state)
+            return
 
     try:
         submit = await assessment.submit(test, user, raw)
@@ -575,7 +597,7 @@ async def open_profile(
     await safe_edit(
         callback,
         uz.profile(user, stats, rank),
-        reply_markup=profile_keyboard(),
+        reply_markup=profile_keyboard(user.is_teacher),
     )
 
 
@@ -588,5 +610,5 @@ async def cmd_profile(
 ) -> None:
     stats = await AttemptRepository(session).user_stats(user.id)
     rank = await UserRepository(session).xp_rank(user)
-    await message.answer(uz.profile(user, stats, rank), reply_markup=profile_keyboard())
+    await message.answer(uz.profile(user, stats, rank), reply_markup=profile_keyboard(user.is_teacher))
 

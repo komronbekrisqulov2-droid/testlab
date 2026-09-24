@@ -126,6 +126,55 @@ async def handle_payload(
 
             return await handle_parent_deeplink(message, int(raw_id), user, session)
 
+    #  --- Sinf / Guruhga a'zo bo'lish: cls_ABC123 ---
+    if payload.startswith("cls_"):
+        code = payload[4:].strip().upper()
+        from modules.classroom.repository import ClassroomRepository
+        cls_repo = ClassroomRepository(session)
+        classroom = await cls_repo.get_by_code(code)
+
+        if classroom is None:
+            await message.answer(
+                "⚠️ <b>Guruh topilmadi yoki havola eskirgan.</b>\n"
+                "Iltimos, o'qituvchingizdan to'g'ri taklif havolasini oling.",
+                reply_markup=home_keyboard(),
+            )
+            return True
+
+        # Allaqachon a'zo bo'lsa
+        if await cls_repo.is_member(classroom.id, user.id):
+            await message.answer(
+                f"ℹ️ Siz allaqachon <b>«{uz.escape(classroom.name)}»</b> guruhiga a'zosiz!\n\n"
+                f"O'qituvchi: <b>{classroom.teacher.full_name if classroom.teacher else '—'}</b>",
+                reply_markup=home_keyboard(),
+            )
+            return True
+
+        # A'zo qilish
+        await cls_repo.add_member(classroom.id, user.id)
+        await session.commit()
+
+        await message.answer(
+            f"🎉 <b>Tabriklaymiz! Siz muvaffaqiyatli «{uz.escape(classroom.name)}» guruhiga qo'shildingiz!</b>\n\n"
+            f"👤 O'qituvchi: <b>{classroom.teacher.full_name if classroom.teacher else '—'}</b>\n\n"
+            f"Endi siz ushbu guruhga mo'ljallangan barcha testlarni yechishingiz mumkin.",
+            reply_markup=home_keyboard(),
+        )
+
+        # O'qituvchiga xabarnoma yuborish
+        if classroom.teacher and classroom.teacher.telegram_id:
+            try:
+                await message.bot.send_message(
+                    classroom.teacher.telegram_id,
+                    f"👤 <b>Yangi o'quvchi qo'shildi!</b>\n\n"
+                    f"O'quvchi: <b>{uz.escape(user.full_name)}</b>\n"
+                    f"Guruh: <b>«{uz.escape(classroom.name)}»</b>",
+                )
+            except Exception:
+                pass
+
+        return True
+
     return False
 
 

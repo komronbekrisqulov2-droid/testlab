@@ -97,6 +97,16 @@ class Attempt(Base, BigIntPK):
         nullable=True,
         doc="Yuborilgan javoblar. Javobsiz savol o'rnida '-'",
     )
+    question_order: Mapped[str | None] = mapped_column(
+        String(512),
+        nullable=True,
+        doc="Ushbu urinish uchun aralashtirilgan savollar tartibi (masalan '14,3,29,45,...')",
+    )
+    effective_key: Mapped[str | None] = mapped_column(
+        String(256),
+        nullable=True,
+        doc="Ushbu urinish uchun moslashtirilgan to'g'ri kalit",
+    )
 
     # ------------------------------------------------------------------
     #  Vaqt

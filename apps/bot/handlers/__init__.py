@@ -36,6 +36,7 @@ from apps.bot.handlers.student import explanations as student_explanations
 from apps.bot.handlers.student import mistakes as student_mistakes
 from apps.bot.handlers.student import parent as student_parent
 from apps.bot.handlers.student import result as student_result
+from apps.bot.handlers.teacher import classroom as teacher_classroom
 from apps.bot.handlers.teacher import create as teacher_create
 from apps.bot.handlers.teacher import manage as teacher_manage
 from core.logging import get_logger
@@ -56,6 +57,7 @@ def setup_routers(dispatcher: Dispatcher) -> None:
         admin_panel.router,
         teacher_create.router,
         teacher_manage.router,
+        teacher_classroom.router,
         student_explanations.router,
         student_mistakes.router,
         student_parent.router,

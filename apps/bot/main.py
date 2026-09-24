@@ -42,6 +42,7 @@ BOT_COMMANDS: list[BotCommand] = [
     BotCommand(command="start", description="🚀 Botni ishga tushirish"),
     BotCommand(command="menu", description="🏠 Bosh menyu"),
     BotCommand(command="new", description="➕ Test yaratish"),
+    BotCommand(command="classes", description="👥 Guruhlar (Sinflar)"),
     BotCommand(command="profile", description="👤 Profilim"),
     BotCommand(command="help", description="❓ Yordam"),
     BotCommand(command="cancel", description="✖️ Amalni bekor qilish"),

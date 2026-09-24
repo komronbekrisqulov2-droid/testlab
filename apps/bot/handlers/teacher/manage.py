@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from aiogram import F, Router
+from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     BufferedInputFile,
@@ -24,12 +25,14 @@ from apps.bot.keyboards.inline import (
     my_tests_keyboard,
     participants_keyboard,
     test_edit_keyboard,
+    test_group_select_keyboard,
     test_manage_keyboard,
+    test_random_keyboard,
     timer_select_keyboard,
 )
 import urllib.parse
 
-from apps.bot.states import ChannelShare, TestEdit, TestSchedule
+from apps.bot.states import ChannelShare, RandomQuestionsCount, TestEdit, TestSchedule
 from apps.bot.texts import uz
 from apps.bot.utils import safe_answer, safe_edit, send_media_group
 from core.config import settings
@@ -246,6 +249,246 @@ async def toggle_test_status(
         await safe_answer(callback, "🟢 Test ochildi (faollashtirildi). Endi yechish mumkin!", alert=True)
 
     await open_timer_menu(callback, callback_data, user, session)
+
+
+# ======================================================================
+#  RANDOMIZATSIYA (KO'CHIRISHGA QARSHI)
+# ======================================================================
+
+@router.callback_query(TestCB.filter(F.action == "random_menu"))
+async def open_random_menu(
+    callback: CallbackQuery,
+    callback_data: TestCB,
+    user: User,
+    session: AsyncSession,
+) -> None:
+    """Randomizatsiya sozlamalari ekrani."""
+    await safe_answer(callback)
+    test = await _load_owned(session, callback_data.test_id, user)
+    if test is None:
+        await safe_answer(callback, uz.NO_PERMISSION, alert=True)
+        return
+
+    status_str = "🟢 Yoqilgan (Faol)" if test.is_randomized else "⚪ O'chirilgan"
+    count_str = f"{test.random_questions_count} ta savol" if test.random_questions_count else "Barcha savollar (Aralashgan)"
+    total_q = test.questions_count or len(test.key_letters)
+
+    text = (
+        f"🎲 <b>SAVOLLARNI RANDOM QILISH (KO'CHIRISHGA QARSHI)</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📝 Test: <b>{uz.escape(test.title)}</b> (№{test.number})\n"
+        f"📊 Umumiy savollar: <b>{total_q} ta</b>\n"
+        f"📌 Random holati: <b>{status_str}</b>\n"
+        f"🔢 O'quvchiga tushish soni: <b>{count_str}</b>\n\n"
+        f"💡 <i>Randomizatsiya yoqilganda har bir o'quvchi testni ochganida unga savollar "
+        f"mutlaqo tasodifiy tartibda yoki tasodifiy tanlangan N ta savol tushadi. "
+        f"Bu o'quvchilar bir-biridan ko'chirib olishini butunlay (0 ga) yo'q qiladi!</i>"
+    )
+    await safe_edit(
+        callback,
+        text,
+        reply_markup=test_random_keyboard(test),
+    )
+
+
+@router.callback_query(TestCB.filter(F.action == "toggle_random"))
+async def toggle_random(
+    callback: CallbackQuery,
+    callback_data: TestCB,
+    user: User,
+    session: AsyncSession,
+) -> None:
+    """Randomizatsiyani yoqish yoki o'chirish."""
+    test = await _load_owned(session, callback_data.test_id, user)
+    if test is None:
+        await safe_answer(callback, uz.NO_PERMISSION, alert=True)
+        return
+
+    test.is_randomized = not test.is_randomized
+    await session.commit()
+    msg = "🟢 Randomizatsiya yoqildi!" if test.is_randomized else "🔴 Randomizatsiya o'chirildi."
+    await safe_answer(callback, msg)
+    await open_random_menu(callback, callback_data, user, session)
+
+
+@router.callback_query(TestCB.filter(F.action == "set_rand_all"))
+async def set_random_all(
+    callback: CallbackQuery,
+    callback_data: TestCB,
+    user: User,
+    session: AsyncSession,
+) -> None:
+    """Barcha savollarni aralashtirib berish rejimiga o'tish."""
+    test = await _load_owned(session, callback_data.test_id, user)
+    if test is None:
+        await safe_answer(callback, uz.NO_PERMISSION, alert=True)
+        return
+
+    test.random_questions_count = None
+    test.is_randomized = True
+    await session.commit()
+    await safe_answer(callback, "♾ Endi barcha savollar aralashtiriladi!")
+    await open_random_menu(callback, callback_data, user, session)
+
+
+@router.callback_query(TestCB.filter(F.action == "set_rand_count"))
+async def prompt_random_count(
+    callback: CallbackQuery,
+    callback_data: TestCB,
+    user: User,
+    state: FSMContext,
+) -> None:
+    """O'quvchiga nechta savol tushishini so'rash."""
+    await safe_answer(callback)
+    await state.set_state(RandomQuestionsCount.count)
+    await state.update_data(random_test_id=callback_data.test_id)
+
+    cancel_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=uz.BTN_CANCEL,
+                    callback_data=TestCB(action="random_menu", test_id=callback_data.test_id).pack(),
+                )
+            ]
+        ]
+    )
+    await safe_edit(
+        callback,
+        "🔢 <b>Har bir o'quvchiga nechta savol tushsin?</b>\n\n"
+        "Masalan, testda 50 ta savol bo'lsa, har bir o'quvchiga shulardan tasodifiy <b>20</b> tasi "
+        "tushishi uchun <code>20</code> deb yozib yuboring:",
+        reply_markup=cancel_kb,
+    )
+
+
+@router.message(StateFilter(RandomQuestionsCount.count))
+async def save_random_count(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    session: AsyncSession,
+) -> None:
+    """Kiritilgan savollar sonini saqlash."""
+    raw = (message.text or "").strip()
+    if not raw.isdigit():
+        await message.answer("⚠️ Iltimos, faqat musbat raqam kiriting (masalan: 20).")
+        return
+
+    count = int(raw)
+    data = await state.get_data()
+    test_id = data.get("random_test_id")
+    await state.clear()
+
+    test = await _load_owned(session, test_id, user)
+    if test is None:
+        await message.answer("⚠️ Test topilmadi.")
+        return
+
+    total_q = test.questions_count or len(test.key_letters)
+    if count < 1 or count > total_q:
+        await message.answer(
+            f"⚠️ Savollar soni 1 dan {total_q} gacha bo'lishi kerak.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="🔙 Random sozlamalariga",
+                            callback_data=TestCB(action="random_menu", test_id=test.id).pack(),
+                        )
+                    ]
+                ]
+            ),
+        )
+        return
+
+    test.random_questions_count = count
+    test.is_randomized = True
+    await session.commit()
+
+    await message.answer(
+        f"✅ <b>Sozlama saqlandi!</b>\n\n"
+        f"Har bir o'quvchiga umumiy {total_q} ta savoldan tasodifiy <b>{count} tasi</b> tanlab beriladi.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="🔙 Testni boshqarish",
+                        callback_data=TestCB(action="manage", test_id=test.id).pack(),
+                    )
+                ]
+            ]
+        ),
+    )
+
+
+# ======================================================================
+#  GURUH / SINFGA BIRIKTIRISH
+# ======================================================================
+
+@router.callback_query(TestCB.filter(F.action == "group_menu"))
+async def open_group_menu(
+    callback: CallbackQuery,
+    callback_data: TestCB,
+    user: User,
+    session: AsyncSession,
+) -> None:
+    """Testni guruhga biriktirish menyusi."""
+    await safe_answer(callback)
+    test = await _load_owned(session, callback_data.test_id, user)
+    if test is None:
+        await safe_answer(callback, uz.NO_PERMISSION, alert=True)
+        return
+
+    from modules.classroom.repository import ClassroomRepository
+    cls_repo = ClassroomRepository(session)
+    classrooms = await cls_repo.list_by_teacher(user.id)
+
+    curr_group = test.classroom.name if (test.classroom_id and test.classroom) else "🌐 Barchaga ochiq (Umumiy)"
+
+    text = (
+        f"👥 <b>TESTNI GURUHGA BIRIKTIRISH</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📝 Test: <b>{uz.escape(test.title)}</b> (№{test.number})\n"
+        f"🔒 Hozirgi biriktirilgan guruh: <b>{curr_group}</b>\n\n"
+        f"<i>Agar ma'lum bir guruhni tanlasangiz, bu test yopiq bo'ladi va faqat "
+        f"o'sha guruh a'zolari uni yecha oladi. Boshqa o'quvchilar kira olmaydi.</i>\n\n"
+        f"Guruhni tanlang:"
+    )
+    await safe_edit(
+        callback,
+        text,
+        reply_markup=test_group_select_keyboard(test, classrooms),
+    )
+
+
+@router.callback_query(TestCB.filter(F.action == "set_group"))
+async def set_test_group(
+    callback: CallbackQuery,
+    callback_data: TestCB,
+    user: User,
+    session: AsyncSession,
+) -> None:
+    """Testni tanlangan guruhga biriktirish yoki barchaga ochish."""
+    test = await _load_owned(session, callback_data.test_id, user)
+    if test is None:
+        await safe_answer(callback, uz.NO_PERMISSION, alert=True)
+        return
+
+    if callback_data.value == 0:
+        test.classroom_id = None
+        await session.commit()
+        await safe_answer(callback, "🌐 Test endi barchaga ochiq!")
+    else:
+        from modules.classroom.repository import ClassroomRepository
+        cls_repo = ClassroomRepository(session)
+        target_cls = await cls_repo.get(callback_data.value)
+        if target_cls and target_cls.teacher_id == user.id:
+            test.classroom_id = target_cls.id
+            await session.commit()
+            await safe_answer(callback, f"🔒 Test «{target_cls.name}» guruhiga biriktirildi!")
+
+    await open_group_menu(callback, callback_data, user, session)
 
 
 @router.callback_query(TestCB.filter(F.action == "sched_start"))

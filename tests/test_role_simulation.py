@@ -275,17 +275,9 @@ async def run_simulation() -> int:
     res = await feed(callback_update(MenuCB(action="register").pack(), STUDENT_ID))
     check("1.2 Ro'yxatdan o'tish boshlanishi", res is not UNHANDLED, True)
 
-    # 1.3 Ism kiritish
-    res = await feed(message_update("Komiljon", STUDENT_ID))
-    check("1.3 Ism kiritildi", res is not UNHANDLED, True)
-
-    # 1.4 Familiya kiritish
-    res = await feed(message_update("Risqulov", STUDENT_ID))
-    check("1.4 Familiya kiritildi", res is not UNHANDLED, True)
-
-    # 1.5 Telefon kiritish (kontakt yoki text)
-    res = await feed(message_update("+998901234567", STUDENT_ID))
-    check("1.5 Telefon kiritildi (ro'yxatdan o'tish yakunlandi)", res is not UNHANDLED, True)
+    # 1.3 To'liq ism-familiya kiritish (yagona bosqich)
+    res = await feed(message_update("Komiljon Risqulov", STUDENT_ID))
+    check("1.3 To'liq ism-familiya kiritildi (ro'yxatdan o'tish yakunlandi)", res is not UNHANDLED, True)
 
     # Bazada o'quvchi holatini tekshiramiz
     async with session_factory() as s:

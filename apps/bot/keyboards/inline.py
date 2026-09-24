@@ -10,6 +10,7 @@ from apps.bot.keyboards.callbacks import (
     AttemptCB,
     BuildCB,
     CertCB,
+    ClassCB,
     ExplainCB,
     FeedbackCB,
     MenuCB,
@@ -110,6 +111,9 @@ def main_menu(user: User) -> InlineKeyboardMarkup:
             InlineKeyboardButton(
                 text=uz.BTN_MY_TESTS, callback_data=MenuCB(action="mytests").pack()
             ),
+            InlineKeyboardButton(
+                text="👥 Guruhlarim (Sinflar)", callback_data=ClassCB(action="list").pack()
+            ),
         )
 
     builder.row(
@@ -120,11 +124,21 @@ def main_menu(user: User) -> InlineKeyboardMarkup:
             text=uz.BTN_MISTAKES, callback_data=MistakeCB(action="hub").pack()
         ),
     )
-    builder.row(
-        InlineKeyboardButton(
-            text=uz.BTN_LEADERBOARD, callback_data=MenuCB(action="board").pack()
-        ),
-    )
+    if not user.is_teacher:
+        builder.row(
+            InlineKeyboardButton(
+                text=uz.BTN_LEADERBOARD, callback_data=MenuCB(action="board").pack()
+            ),
+            InlineKeyboardButton(
+                text="👥 Guruhlarim", callback_data=ClassCB(action="student_list").pack()
+            ),
+        )
+    else:
+        builder.row(
+            InlineKeyboardButton(
+                text=uz.BTN_LEADERBOARD, callback_data=MenuCB(action="board").pack()
+            ),
+        )
 
 
     builder.row(
@@ -474,6 +488,23 @@ def test_manage_keyboard(test: Test) -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text="✏️ Testni tahrirlash",
             callback_data=TestCB(action="edit_menu", test_id=test.id).pack(),
+        )
+    )
+
+    rand_text = f"🎲 Random: Yoqilgan ({test.random_questions_count or 'Hammasi'} ta) 🟢" if test.is_randomized else "🎲 Randomizatsiya: O'chirilgan ⚪"
+    builder.row(
+        InlineKeyboardButton(
+            text=rand_text,
+            callback_data=TestCB(action="random_menu", test_id=test.id).pack(),
+        )
+    )
+
+    cls_name = test.classroom.name if (test.classroom_id and test.classroom) else None
+    grp_text = f"👥 Guruh: {cls_name[:16]} 🔒" if cls_name else "👥 Guruhga biriktirish (Ochiq)"
+    builder.row(
+        InlineKeyboardButton(
+            text=grp_text,
+            callback_data=TestCB(action="group_menu", test_id=test.id).pack(),
         )
     )
 
@@ -922,9 +953,16 @@ def simple_back_keyboard() -> InlineKeyboardMarkup:
 #  SMART UX: PROFIL, XATOLAR VA OTA-ONA
 # ======================================================================
 
-def profile_keyboard() -> InlineKeyboardMarkup:
+def profile_keyboard(is_teacher: bool = False) -> InlineKeyboardMarkup:
     """Profil ekrani klaviaturasi."""
     builder = InlineKeyboardBuilder()
+    if not is_teacher:
+        builder.row(
+            InlineKeyboardButton(
+                text="👥 Mening guruhlarim",
+                callback_data=ClassCB(action="student_list").pack(),
+            )
+        )
     builder.row(
         InlineKeyboardButton(
             text=uz.BTN_LINK_PARENT,
@@ -1104,6 +1142,208 @@ def admin_feedback_reply_keyboard(target_user_id: int) -> InlineKeyboardMarkup:
             text="✍️ Foydalanuvchiga javob berish",
             callback_data=FeedbackCB(action="reply", target_id=target_user_id).pack(),
         )
+    )
+    return builder.as_markup()
+
+
+def test_random_keyboard(test: Test) -> InlineKeyboardMarkup:
+    """Randomizatsiya sozlamalari ekrani."""
+    builder = InlineKeyboardBuilder()
+
+    # 1. Yoqish / o'chirish
+    if test.is_randomized:
+        builder.row(
+            InlineKeyboardButton(
+                text="🔴 Randomizatsiyani o'chirish",
+                callback_data=TestCB(action="toggle_random", test_id=test.id).pack(),
+            )
+        )
+    else:
+        builder.row(
+            InlineKeyboardButton(
+                text="🟢 Randomizatsiyani yoqish",
+                callback_data=TestCB(action="toggle_random", test_id=test.id).pack(),
+            )
+        )
+
+    # 2. Savollar soni
+    builder.row(
+        InlineKeyboardButton(
+            text="🔢 Savollar sonini belgilash",
+            callback_data=TestCB(action="set_rand_count", test_id=test.id).pack(),
+        )
+    )
+    if test.random_questions_count:
+        builder.row(
+            InlineKeyboardButton(
+                text="♾ Barcha savollarni aralashtirish",
+                callback_data=TestCB(action="set_rand_all", test_id=test.id).pack(),
+            )
+        )
+
+    builder.row(
+        back_button(TestCB(action="manage", test_id=test.id).pack()),
+        home_button(),
+    )
+    return builder.as_markup()
+
+
+def test_group_select_keyboard(test: Test, classrooms: list) -> InlineKeyboardMarkup:
+    """Testni ma'lum sinf/guruhga biriktirish klaviaturasi."""
+    builder = InlineKeyboardBuilder()
+
+    for cls in classrooms:
+        is_current = (test.classroom_id == cls.id)
+        mark = " ✅" if is_current else ""
+        builder.row(
+            InlineKeyboardButton(
+                text=f"👥 {cls.name[:25]}{mark}",
+                callback_data=TestCB(action="set_group", test_id=test.id, value=cls.id).pack(),
+            )
+        )
+
+    # Guruhsiz (barchaga ochiq)
+    is_open = (test.classroom_id is None)
+    open_mark = " ✅" if is_open else ""
+    builder.row(
+        InlineKeyboardButton(
+            text=f"🌐 Barchaga ochiq (Guruhsiz){open_mark}",
+            callback_data=TestCB(action="set_group", test_id=test.id, value=0).pack(),
+        )
+    )
+
+    builder.row(
+        back_button(TestCB(action="manage", test_id=test.id).pack()),
+        home_button(),
+    )
+    return builder.as_markup()
+
+
+def classrooms_list_keyboard(classrooms: list) -> InlineKeyboardMarkup:
+    """O'qituvchi guruhlari ro'yxati."""
+    builder = InlineKeyboardBuilder()
+
+    for cls in classrooms:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"👥 {cls.name[:28]} ({cls.members_count} o'quvchi)",
+                callback_data=ClassCB(action="view", class_id=cls.id).pack(),
+            )
+        )
+
+    builder.row(
+        InlineKeyboardButton(
+            text="➕ Yangi guruh yaratish",
+            callback_data=ClassCB(action="create").pack(),
+        )
+    )
+    builder.row(home_button())
+    return builder.as_markup()
+
+
+def classroom_detail_keyboard(cls) -> InlineKeyboardMarkup:
+    """Bitta guruh tafsilotlari ekrani."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(
+            text="📊 Sinf reytingi (Peshqadamlar)",
+            callback_data=ClassCB(action="ranking", class_id=cls.id).pack(),
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="👥 O'quvchilar ro'yxati",
+            callback_data=ClassCB(action="students", class_id=cls.id).pack(),
+        ),
+        InlineKeyboardButton(
+            text="📝 Guruh testlari",
+            callback_data=ClassCB(action="tests", class_id=cls.id).pack(),
+        ),
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🗑 Guruhni o'chirish",
+            callback_data=ClassCB(action="del_conf", class_id=cls.id).pack(),
+        )
+    )
+    builder.row(
+        back_button(ClassCB(action="list").pack()),
+        home_button(),
+    )
+    return builder.as_markup()
+
+
+def classroom_ranking_keyboard(class_id: int, is_teacher: bool = True) -> InlineKeyboardMarkup:
+    """Guruh reytingi menyusi."""
+    builder = InlineKeyboardBuilder()
+    back_target = ClassCB(action="view", class_id=class_id).pack() if is_teacher else ClassCB(action="student_view", class_id=class_id).pack()
+    builder.row(
+        back_button(back_target),
+        home_button(),
+    )
+    return builder.as_markup()
+
+
+def classroom_students_keyboard(class_id: int, members: list, page: int = 1) -> InlineKeyboardMarkup:
+    """Guruh o'quvchilari ro'yxati."""
+    builder = InlineKeyboardBuilder()
+
+    for m in members:
+        user_name = m.user.full_name[:22] if m.user else f"ID: {m.user_id}"
+        builder.row(
+            InlineKeyboardButton(
+                text=f"👤 {user_name}",
+                callback_data=NoopCB().pack(),
+            ),
+            InlineKeyboardButton(
+                text="❌ Chiqarish",
+                callback_data=ClassCB(action="remove_user", class_id=class_id, target_id=m.user_id).pack(),
+            ),
+        )
+
+    builder.row(
+        back_button(ClassCB(action="view", class_id=class_id).pack()),
+        home_button(),
+    )
+    return builder.as_markup()
+
+
+def student_classrooms_list_keyboard(classrooms: list) -> InlineKeyboardMarkup:
+    """O'quvchi a'zo bo'lgan guruhlar ro'yxati."""
+    builder = InlineKeyboardBuilder()
+
+    for cls in classrooms:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"🏫 {cls.name[:28]}",
+                callback_data=ClassCB(action="student_view", class_id=cls.id).pack(),
+            )
+        )
+
+    builder.row(home_button())
+    return builder.as_markup()
+
+
+def student_classroom_detail_keyboard(class_id: int) -> InlineKeyboardMarkup:
+    """O'quvchi uchun guruh tafsilotlari ekrani."""
+    builder = InlineKeyboardBuilder()
+
+    builder.row(
+        InlineKeyboardButton(
+            text="📊 Sinf reytingi (Peshqadamlar)",
+            callback_data=ClassCB(action="ranking", class_id=class_id).pack(),
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🚪 Guruhdan chiqish",
+            callback_data=ClassCB(action="student_leave", class_id=class_id).pack(),
+        )
+    )
+    builder.row(
+        back_button(ClassCB(action="student_list").pack()),
+        home_button(),
     )
     return builder.as_markup()
 

@@ -21,6 +21,7 @@ from apps.bot.keyboards.callbacks import FeedbackCB
 from apps.bot.keyboards.inline import admin_feedback_reply_keyboard, main_menu
 from apps.bot.texts import uz
 from modules.identity.models import User
+import modules.registry  # noqa: F401
 
 
 def check(name: str, condition: bool) -> None:

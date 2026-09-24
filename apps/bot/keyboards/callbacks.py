@@ -132,3 +132,12 @@ class FeedbackCB(CallbackData, prefix="fb"):
     target_id: int = 0        # foydalanuvchi telegram_id
 
 
+class ClassCB(CallbackData, prefix="cl"):
+    """Sinf va guruhlar (Classroom)."""
+
+    action: str      # list, view, create, delete, del_conf, students, tests, ranking, remove_user
+    class_id: int = 0
+    target_id: int = 0
+    page: int = 1
+
+

@@ -41,6 +41,7 @@ from infrastructure.database.base import (
 
 if TYPE_CHECKING:
     from modules.assessment.models import Attempt
+    from modules.classroom.models import Classroom
     from modules.identity.models import User
 
 
@@ -212,6 +213,24 @@ class Test(Base, IntPK, TimestampMixin):
         Boolean, default=True, server_default="1", nullable=False
     )
 
+    # --- Randomizatsiya (Ko'chirishga qarshi) ---
+    is_randomized: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False,
+        doc="Savollarni aralashtirish (har bir o'quvchiga har xil tartib)",
+    )
+    random_questions_count: Mapped[int | None] = mapped_column(
+        Integer, nullable=True,
+        doc="Barcha savollardan faqat N tasini tasodifiy tanlash (None = barchasi)",
+    )
+
+    # --- Sinf / Guruh integratsiyasi ---
+    classroom_id: Mapped[int | None] = mapped_column(
+        ForeignKey("classrooms.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        doc="Faqat ma'lum bir sinf/guruh uchun yopiq test",
+    )
+
     # --- Jadval ---
     starts_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     ends_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
@@ -263,6 +282,10 @@ class Test(Base, IntPK, TimestampMixin):
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="QuestionExplanation.question_number",
+        lazy="selectin",
+    )
+    classroom: Mapped["Classroom | None"] = relationship(
+        back_populates="tests",
         lazy="selectin",
     )
 

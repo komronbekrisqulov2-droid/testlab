@@ -69,6 +69,26 @@ async def handle_api_test_data(request: web.Request) -> web.Response:
 
         key = test.answer_key or ""
         q_count = len(key) if key else test.questions_count
+        if test.is_randomized and test.random_questions_count:
+            q_count = test.random_questions_count
+
+        user_id_str = request.query.get("user_id")
+        question_order = None
+        if user_id_str and user_id_str.isdigit():
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(int(user_id_str))
+            if user is not None:
+                assessment = AssessmentService(session)
+                active = await assessment.attempts.get_active(user.id, test.id)
+                if active is None and test.is_randomized:
+                    try:
+                        active = await assessment.begin(test, user)
+                    except Exception:
+                        pass
+                if active is not None and active.question_order:
+                    question_order = [int(x) for x in active.question_order.split(",") if x.isdigit()]
+                    q_count = len(question_order)
+
         # Variantlar soni: 'E' harfi bo'lsa 5 ta, aks holda standart 4 ta (A, B, C, D)
         has_e = any(c in key.upper() for c in "EFGHIJKLMNOPQRSTUVWXYZ")
         options_count = 5 if has_e else 4
@@ -82,6 +102,8 @@ async def handle_api_test_data(request: web.Request) -> web.Response:
             "optionsCount": options_count,
             "timeLimitSec": test.time_limit_sec,
             "time_limit_sec": test.time_limit_sec,
+            "isRandomized": bool(test.is_randomized),
+            "questionOrder": question_order,
             "media": [
                 {
                     "id": m.id,

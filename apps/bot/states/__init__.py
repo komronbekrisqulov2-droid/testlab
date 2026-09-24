@@ -110,6 +110,18 @@ class AdminFeedbackReplyState(StatesGroup):
     waiting_for_reply = State()
 
 
+class ClassroomCreate(StatesGroup):
+    """Sinf / guruh yaratish."""
+
+    name = State()
+
+
+class RandomQuestionsCount(StatesGroup):
+    """Randomizatsiyada har bir o'quvchiga nechta savol tushishi."""
+
+    count = State()
+
+
 __all__ = (
     "Registration",
     "Building",
@@ -124,6 +136,8 @@ __all__ = (
     "TeacherAppealReplyState",
     "FeedbackState",
     "AdminFeedbackReplyState",
+    "ClassroomCreate",
+    "RandomQuestionsCount",
 )
 
 

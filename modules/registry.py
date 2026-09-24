@@ -42,6 +42,9 @@ from modules.assessment.models import (
 # --- certification ---
 from modules.certification.models import Certificate
 
+# --- classroom ---
+from modules.classroom.models import Classroom, ClassroomMember
+
 #  Reyestrda bo'lishi kutilayotgan jadvallar.
 #  Sinov shu ro'yxat bilan `Base.metadata` ni solishtiradi.
 EXPECTED_TABLES: frozenset[str] = frozenset({
@@ -55,6 +58,8 @@ EXPECTED_TABLES: frozenset[str] = frozenset({
     "question_explanations",
     "question_appeals",
     "parent_student_links",
+    "classrooms",
+    "classroom_members",
 })
 
 __all__ = (
@@ -81,5 +86,8 @@ __all__ = (
     "grade_for",
     # certification
     "Certificate",
+    # classroom
+    "Classroom",
+    "ClassroomMember",
 )
 
