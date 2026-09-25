@@ -999,7 +999,11 @@ def mistakes_hub_keyboard(has_mistakes: bool) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def mistake_question_keyboard(test_id: int, q_num: int) -> InlineKeyboardMarkup:
+def mistake_question_keyboard(
+    test_id: int,
+    q_num: int,
+    has_media: bool = False,
+) -> InlineKeyboardMarkup:
     """Xatolar ustida ishlashda bitta savol uchun javob tanlash klaviaturasi."""
     builder = InlineKeyboardBuilder()
     options = ["A", "B", "C", "D", "E"]
@@ -1011,17 +1015,25 @@ def mistake_question_keyboard(test_id: int, q_num: int) -> InlineKeyboardMarkup:
         for opt in options
     ]
     builder.row(*buttons[:4])
-    builder.row(
-        buttons[4],
+    row2 = [buttons[4]]
+    row2.append(
         InlineKeyboardButton(
-            text="💡 Yechimni ko'rish",
+            text="💡 Yechim",
             callback_data=ExplainCB(action="view", test_id=test_id, q_num=q_num).pack(),
-        ),
+        )
     )
+    if has_media:
+        row2.append(
+            InlineKeyboardButton(
+                text="🖼 Test varaqasi",
+                callback_data=MistakeCB(action="sheet", test_id=test_id, q_num=q_num).pack(),
+            )
+        )
+    builder.row(*row2)
     builder.row(
         InlineKeyboardButton(
             text="⏭ O'tkazib yuborish",
-            callback_data=MistakeCB(action="retake").pack(),
+            callback_data=MistakeCB(action="skip", test_id=test_id, q_num=q_num).pack(),
         ),
         home_button(),
     )

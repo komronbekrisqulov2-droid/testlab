@@ -711,6 +711,8 @@ def create_webapp(bot: Bot | None = None) -> web.Application:
     app = web.Application()
     if bot is not None:
         app["bot"] = bot
+    app.router.add_get("/", lambda r: web.Response(text="TestLab WebApp Running", content_type="text/plain"))
+    app.router.add_get("/health", lambda r: web.json_response({"status": "ok"}))
     app.router.add_get("/test/{test_id}", handle_test_page)
     app.router.add_get("/api/test/{test_id}", handle_api_test_data)
     app.router.add_get("/api/media/{media_id}", handle_api_media)
