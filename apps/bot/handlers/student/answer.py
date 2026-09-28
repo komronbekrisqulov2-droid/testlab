@@ -37,7 +37,7 @@ from apps.bot.states import Answering
 from apps.bot.texts import uz
 from apps.bot.utils import safe_answer, safe_edit, send_media_group
 from core.config import settings
-from core.exceptions import TestLabError
+from core.exceptions import AlreadyAnsweredError, TestLabError
 from core.logging import get_logger
 from modules.assessment.repository import AttemptRepository
 from modules.assessment.service import AssessmentService
@@ -118,21 +118,7 @@ async def open_test(
     await state.set_state(Answering.waiting)
     await state.update_data(test_id=test.id)
 
-    card_text = uz.test_card(test, len(media))
-    if attempt and attempt.question_order:
-        orders = [int(x) for x in attempt.question_order.split(",") if x.isdigit()]
-        order_preview = ", ".join(f"#{x}" for x in orders[:15])
-        if len(orders) > 15:
-            order_preview += f" ... (+yana {len(orders) - 15} ta)"
-
-        card_text += (
-            f"\n\n🎲 <b>RANDOM REJIM (Ko'chirishdan himoyalangan):</b>\n"
-            f"Sizga umumiy testdan <b>{len(orders)} ta</b> savol tushdi.\n"
-            f"📋 <b>Sizning savollar tartibingiz:</b>\n"
-            f"{order_preview}\n\n"
-            f"💡 <i>Javoblarni yuborayotganda 1-savol o'rniga ro'yxatingizdagi 1-savol (#{orders[0]}) "
-            f"javobini, 2-savol o'rniga 2-savol (#{orders[1]}) javobini yozing.</i>"
-        )
+    card_text = uz.test_card(test, len(media), attempt=attempt)
 
     await message.answer(
         card_text,
@@ -363,13 +349,14 @@ async def answer_button(
         return
 
     media_count = await catalog.media_count(test)
+    active = await assessment.begin(test, user)
 
     await state.set_state(Answering.waiting)
     await state.update_data(test_id=test.id)
 
     await safe_edit(
         callback,
-        uz.ask_answers(test),
+        uz.ask_answers(test, active),
         reply_markup=answering_keyboard(test.id, has_images=media_count > 0),
     )
 
@@ -378,6 +365,7 @@ async def answer_button(
 async def back_to_card(
     callback: CallbackQuery,
     callback_data: TestCB,
+    user: User,
     session: AsyncSession,
 ) -> None:
     """
@@ -395,11 +383,13 @@ async def back_to_card(
         await safe_answer(callback, uz.NOT_FOUND, alert=True)
         return
 
+    assessment = AssessmentService(session)
+    active = await assessment.attempts.get_active(user.id, test.id)
     media_count = await catalog.media_count(test)
 
     await safe_edit(
         callback,
-        uz.test_card(test, media_count),
+        uz.test_card(test, media_count, attempt=active),
         reply_markup=test_card_keyboard(test.id, has_images=media_count > 0),
     )
 
@@ -511,6 +501,10 @@ async def receive_webapp_answers(
     assessment = AssessmentService(session)
     try:
         submit = await assessment.submit(test, user, raw)
+    except AlreadyAnsweredError:
+        # Mini App REST orqali allaqachon topshirilgan bo'lsa xatolik chiqarmaymiz
+        await state.clear()
+        return
     except TestLabError as error:
         await message.answer(f"⚠️ {error.user_text()}")
         return

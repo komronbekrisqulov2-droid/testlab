@@ -24,7 +24,6 @@ from apps.bot.keyboards.inline import (
     my_tests_keyboard,
     participants_keyboard,
     test_edit_keyboard,
-    test_group_select_keyboard,
     test_manage_keyboard,
     test_random_keyboard,
     timer_select_keyboard,
@@ -421,73 +420,6 @@ async def save_random_count(
     )
 
 
-# ======================================================================
-#  GURUH / SINFGA BIRIKTIRISH
-# ======================================================================
-
-@router.callback_query(TestCB.filter(F.action == "group_menu"))
-async def open_group_menu(
-    callback: CallbackQuery,
-    callback_data: TestCB,
-    user: User,
-    session: AsyncSession,
-) -> None:
-    """Testni guruhga biriktirish menyusi."""
-    await safe_answer(callback)
-    test = await _load_owned(session, callback_data.test_id, user)
-    if test is None:
-        await safe_answer(callback, uz.NO_PERMISSION, alert=True)
-        return
-
-    from modules.classroom.repository import ClassroomRepository
-    cls_repo = ClassroomRepository(session)
-    classrooms = await cls_repo.list_by_teacher(user.id)
-
-    curr_group = test.classroom.name if (test.classroom_id and test.classroom) else "🌐 Barchaga ochiq (Umumiy)"
-
-    text = (
-        f"👥 <b>TESTNI GURUHGA BIRIKTIRISH</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📝 Test: <b>{uz.escape(test.title)}</b> (№{test.number})\n"
-        f"🔒 Hozirgi biriktirilgan guruh: <b>{curr_group}</b>\n\n"
-        f"<i>Agar ma'lum bir guruhni tanlasangiz, bu test yopiq bo'ladi va faqat "
-        f"o'sha guruh a'zolari uni yecha oladi. Boshqa o'quvchilar kira olmaydi.</i>\n\n"
-        f"Guruhni tanlang:"
-    )
-    await safe_edit(
-        callback,
-        text,
-        reply_markup=test_group_select_keyboard(test, classrooms),
-    )
-
-
-@router.callback_query(TestCB.filter(F.action == "set_group"))
-async def set_test_group(
-    callback: CallbackQuery,
-    callback_data: TestCB,
-    user: User,
-    session: AsyncSession,
-) -> None:
-    """Testni tanlangan guruhga biriktirish yoki barchaga ochish."""
-    test = await _load_owned(session, callback_data.test_id, user)
-    if test is None:
-        await safe_answer(callback, uz.NO_PERMISSION, alert=True)
-        return
-
-    if callback_data.value == 0:
-        test.classroom_id = None
-        await session.commit()
-        await safe_answer(callback, "🌐 Test endi barchaga ochiq!")
-    else:
-        from modules.classroom.repository import ClassroomRepository
-        cls_repo = ClassroomRepository(session)
-        target_cls = await cls_repo.get(callback_data.value)
-        if target_cls and target_cls.teacher_id == user.id:
-            test.classroom_id = target_cls.id
-            await session.commit()
-            await safe_answer(callback, f"🔒 Test «{target_cls.name}» guruhiga biriktirildi!")
-
-    await open_group_menu(callback, callback_data, user, session)
 
 
 @router.callback_query(TestCB.filter(F.action == "sched_start"))
@@ -1115,6 +1047,14 @@ async def save_edit_media(
         file_unique_id = photo.file_unique_id
         media_type = "photo"
     elif message.document:
+        from apps.bot.handlers.teacher.create import _is_allowed_document
+
+        if not _is_allowed_document(message.document):
+            await message.answer(
+                "⚠️ Faqat rasm (JPG, PNG) yoki hujjat (PDF, Word .doc/.docx, TXT) fayllari qabul qilinadi.\n"
+                "Iltimos, to'g'ri formatdagi test materialini yuboring."
+            )
+            return
         file_id = message.document.file_id
         file_unique_id = message.document.file_unique_id
         media_type = "document"
@@ -1328,12 +1268,23 @@ async def process_channel_target(
     sent_msg = None
     if media_list and media_list[0].media_type == "photo":
         try:
-            sent_msg = await bot.send_photo(
-                chat_id=chat_id,
-                photo=media_list[0].file_id,
-                caption=post_text,
-                reply_markup=post_kb,
-            )
+            if len(post_text) <= 1024:
+                sent_msg = await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=media_list[0].file_id,
+                    caption=post_text,
+                    reply_markup=post_kb,
+                )
+            else:
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=media_list[0].file_id,
+                )
+                sent_msg = await bot.send_message(
+                    chat_id=chat_id,
+                    text=post_text,
+                    reply_markup=post_kb,
+                )
         except Exception as err:
             log.warning("Kanalga rasm bilan post chiqarilmadi (%s): %s", chat_id, err)
 

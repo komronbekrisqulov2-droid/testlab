@@ -122,6 +122,10 @@ async def run_tests() -> None:
         check("student1 100% natija oldi", sub1.percentage, 100.0)
         check("student1 5 ta to'g'ri", sub1.correct, 5)
 
+        # Savollarning haqiqiy original_number lari tekshiriladi
+        check("sub1 savol 1 original_number", sub1.questions[0].original_number, order1[0])
+        check("sub1 savol 5 original_number", sub1.questions[4].original_number, order1[4])
+
         # O'quvchi 2 esa bitta to'g'ri, qolganini noto'g'ri yuboradi
         c0 = attempt2.effective_key[0]
         diff_letters = "".join("b" if c == "a" else "a" for c in attempt2.effective_key[1:])
@@ -129,6 +133,32 @@ async def run_tests() -> None:
         sub2 = await assessment.submit(test, student2, wrong_answers)
         check("student2 1 ta to'g'ri", sub2.correct, 1)
         check("student2 4 ta xato", sub2.wrong, 4)
+
+        # 3. Savollar tahlili (question_breakdown) random uchun to'g'ri ishlashini tekshirish
+        breakdown = await assessment.question_breakdown(test)
+        check("breakdown barcha 10 ta savol uchun", len(breakdown), 10)
+        for row in breakdown:
+            check_true(f"savol #{row['number']} foiz hisoblangan", row["rate"] >= 0.0)
+
+        # 4. Kalit yangilanganda qayta hisoblash (recalculate_all)
+        recalculated = await assessment.recalculate_all(test)
+        check_true("recalculate_all muvaffaqiyatli ishladi", isinstance(recalculated, list))
+
+        # 5. UI matnlari (uz.py) randomizatsiya uchun to'g'ri shakllanishini tekshirish
+        from apps.bot.texts import uz
+        card_t = uz.test_card(test, 2, attempt=attempt1)
+        check_true("test_card da RANDOM tartibi ko'rsatilgan", "RANDOM REJIM" in card_t)
+        check_true(f"test_card da #{order1[0]} bor", f"#{order1[0]}" in card_t)
+
+        ask_t = uz.ask_answers(test, attempt=attempt1)
+        check_true("ask_answers da 5 ta savol", "5 ta" in ask_t)
+        check_true(f"ask_answers da #{order1[0]} ko'rsatilgan", f"#{order1[0]}" in ask_t)
+
+        res_t = uz.result(sub1)
+        check_true("result matnida 5 ta savol", "5 ta" in res_t)
+
+        detail_t = uz.attempt_detail_text(attempt1)
+        check_true("attempt_detail_text da Asl savol raqami bor", "Asl #" in detail_t)
 
     print("\n--- 2. SINF VA GURUHLAR (CLASSROOM) ---")
     async with session_factory() as session:

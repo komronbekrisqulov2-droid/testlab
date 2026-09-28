@@ -7,10 +7,13 @@ aiohttp.web orqali interaktiv test yechish sahifasini, media proksisini va API'l
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import io
 import json
+import urllib.parse
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 from aiohttp import web
 
@@ -33,6 +36,38 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 # Media fayllarini xotirada keshlaymiz: media_id -> (bytes, content_type)
 _media_cache: dict[int, tuple[bytes, str]] = {}
+
+
+def validate_telegram_init_data(init_data: str, bot_token: str) -> dict[str, Any] | None:
+    """
+    Telegram WebApp `initData` tekshiruvi (HMAC-SHA256).
+
+    Muvaffaqiyatli bo'lsa, parslangan ma'lumotlar lug'atini (ichidagi user_obj bilan) qaytaradi.
+    Aks holda None.
+    """
+    if not init_data or not bot_token:
+        return None
+    try:
+        parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
+        received_hash = parsed.pop("hash", None)
+        if not received_hash:
+            return None
+
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
+        secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+        calculated_hash = hmac.new(
+            secret_key, data_check_string.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+
+        if hmac.compare_digest(calculated_hash, received_hash):
+            user_raw = parsed.get("user")
+            if user_raw:
+                parsed["user_obj"] = json.loads(user_raw)
+            return parsed
+        return None
+    except Exception as err:
+        log.warning("Telegram initData tekshirishda xato: %s", err)
+        return None
 
 
 async def handle_test_page(request: web.Request) -> web.Response:
@@ -167,6 +202,34 @@ async def handle_api_media(request: web.Request) -> web.Response:
             return web.Response(text="Media yuklab olinmadi", status=500)
 
 
+async def _get_auth_user(
+    request: web.Request,
+    body: dict[str, Any],
+    session,
+) -> User | None:
+    """So'rov yuborgan foydalanuvchini init_data (HMAC) yoki user_id orqali aniqlaydi."""
+    init_data = (body.get("init_data") or "").strip()
+    user_id = body.get("user_id")
+    bot = request.app.get("bot")
+    bot_token = bot.token if (bot and hasattr(bot, "token")) else settings.bot.token
+
+    auth_id: int | None = None
+    if init_data:
+        val = validate_telegram_init_data(init_data, bot_token)
+        if val and "user_obj" in val:
+            auth_id = val["user_obj"].get("id")
+    elif user_id:
+        try:
+            auth_id = int(user_id)
+        except Exception:
+            auth_id = None
+
+    if auth_id:
+        user_repo = UserRepository(session)
+        return await user_repo.get_by_telegram_id(auth_id)
+    return None
+
+
 async def handle_api_submit(request: web.Request) -> web.Response:
     """Mini App orqali yuborilgan javoblarni qabul qiladi va hisoblaydi."""
     test_id_str = request.match_info.get("test_id", "")
@@ -179,24 +242,30 @@ async def handle_api_submit(request: web.Request) -> web.Response:
         return web.json_response({"error": "Noto'g'ri JSON format"}, status=400)
 
     raw_answers = (body.get("answers") or "").strip()
-    user_id = body.get("user_id")
     tab_switches = int(body.get("tab_switches") or 0)
     is_disqualified = bool(body.get("disqualified") or False)
+
+    init_data = (body.get("init_data") or "").strip()
+    bot = request.app.get("bot")
+    bot_token = bot.token if bot else settings.bot.token
+
+    if init_data:
+        validated = validate_telegram_init_data(init_data, bot_token)
+        if not validated or "user_obj" not in validated:
+            return web.json_response(
+                {"error": "Xavfsizlik xatosi: Telegram WebApp autentifikatsiyasi tasdiqlanmadi."},
+                status=401,
+            )
 
     test_id = int(test_id_str)
     async with get_session() as session:
         catalog = CatalogService(session)
+        user_repo = UserRepository(session)
         test = await catalog.tests.get(test_id)
         if test is None:
             return web.json_response({"error": "Test topilmadi"}, status=404)
 
-        user = None
-        user_repo = UserRepository(session)
-        if user_id:
-            try:
-                user = await user_repo.get_by_telegram_id(int(user_id))
-            except Exception:
-                user = None
+        user = await _get_auth_user(request, body, session)
 
         if user is None:
             # Mehmon rejimi (botda ro'yxatdan o'tmagan yoki oddiy brauzer)
@@ -410,6 +479,13 @@ async def handle_api_analysis_generate(request: web.Request) -> web.Response:
         if test is None:
             return web.json_response({"ok": False, "error": "Test topilmadi"}, status=404)
 
+        user = await _get_auth_user(request, body, session)
+        if user and test.author_id != user.id and not user.is_admin:
+            return web.json_response(
+                {"ok": False, "error": "Ruxsat etilmadi: Siz ushbu test muallifi emassiz."},
+                status=403,
+            )
+
         media_items = await catalog.media.list_by_test(test.id)
         bot: Bot | None = request.app.get("bot")
 
@@ -549,6 +625,13 @@ async def handle_api_analysis_chat(request: web.Request) -> web.Response:
         if test is None:
             return web.json_response({"ok": False, "error": "Test topilmadi"}, status=404)
 
+        user = await _get_auth_user(request, body, session)
+        if user and test.author_id != user.id and not user.is_admin:
+            return web.json_response(
+                {"ok": False, "error": "Ruxsat etilmadi: Siz ushbu test muallifi emassiz."},
+                status=403,
+            )
+
         media_items = await catalog.media.list_by_test(test.id)
         bot: Bot | None = request.app.get("bot")
 
@@ -677,6 +760,13 @@ async def handle_api_analysis_save(request: web.Request) -> web.Response:
         test = await catalog.tests.get(test_id)
         if test is None:
             return web.json_response({"ok": False, "error": "Test topilmadi"}, status=404)
+
+        user = await _get_auth_user(request, body, session)
+        if user and test.author_id != user.id and not user.is_admin:
+            return web.json_response(
+                {"ok": False, "error": "Ruxsat etilmadi: Siz ushbu test muallifi emassiz."},
+                status=403,
+            )
 
         from modules.catalog.models import QuestionExplanation
         from sqlalchemy import select

@@ -381,15 +381,6 @@ async def show_participants(
         await safe_answer(callback, uz.NOT_FOUND, alert=True)
         return
 
-    # Yopiq sinf/guruh testi bo'lsa a'zolikni tekshiramiz
-    if test.classroom_id is not None and test.author_id != user.id and not user.is_admin:
-        from modules.classroom.repository import ClassroomRepository
-        cls_repo = ClassroomRepository(session)
-        is_mem = await cls_repo.is_member(test.classroom_id, user.id)
-        if not is_mem:
-            await safe_answer(callback, "🔒 Bu test faqat maxsus guruh o'quvchilari uchun.", alert=True)
-            return
-
     attempts = AttemptRepository(session)
     per_page = 25
     page = await attempts.list_by_test(

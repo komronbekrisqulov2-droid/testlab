@@ -267,7 +267,26 @@ def test_published(test: Test, bot_username: str, media_count: int) -> str:
 #  TEST YECHISH
 # ======================================================================
 
-def test_card(test: Test, media_count: int) -> str:
+def format_question_order(orders: list[int]) -> str:
+    """Aralashgan savollar tartibini qulay formatda ko'rsatish."""
+    if not orders:
+        return ""
+    if len(orders) <= 10:
+        return ", ".join(f"#{x}" for x in orders)
+
+    # 5 tadan guruhlab ko'rsatish (o'qishga juda qulay)
+    lines = []
+    chunk_size = 5
+    for i in range(0, len(orders), chunk_size):
+        chunk = orders[i:i + chunk_size]
+        start_q = i + 1
+        end_q = i + len(chunk)
+        chunk_str = ", ".join(f"#{x}" for x in chunk)
+        lines.append(f"  • {start_q}-{end_q}-savollar: {chunk_str}")
+    return "\n".join(lines)
+
+
+def test_card(test: Test, media_count: int, attempt=None) -> str:
     """
     Test kartochkasi — rasmlardan KEYIN yuboriladi.
 
@@ -275,46 +294,87 @@ def test_card(test: Test, media_count: int) -> str:
     rasm ikki xabar orasida qolib ketardi. Endi: rasmlar, so'ng bitta
     xabar. U tugma bosilganda joyida o'zgaradi.
     """
-    return (
+    orders = None
+    if attempt and getattr(attempt, "question_order", None):
+        orders = [int(x) for x in attempt.question_order.split(",") if x.isdigit()]
+
+    if orders:
+        total_q = test.questions_count
+        assigned_q = len(orders)
+        if assigned_q < total_q:
+            count_str = f"<b>{assigned_q} ta</b> <i>({total_q} tadan tasodifiy tanlangan)</i>"
+        else:
+            count_str = f"<b>{total_q} ta</b> <i>(Aralashtirilgan)</i>"
+    else:
+        count_str = f"<b>{test.questions_count} ta</b>"
+
+    text = (
         f"📝 <b>{escape(test.title)}</b>\n"
         f"{LINE}\n\n"
         f"🔑 Test kodi: <b>{test.number}</b>\n"
-        f"📊 Savollar soni: <b>{test.questions_count} ta</b>\n"
+        f"📊 Savollar soni: {count_str}\n"
         + (f"🖼 Rasmlar: <b>{media_count} ta</b>\n" if media_count else "")
         + f"👤 Test yaratuvchisi: {escape(test.author_name)}\n"
         f"🎯 O'tish balli: <b>{test.pass_score}%</b>\n"
         f"❗️ Urinishlar: <b>{'cheksiz' if test.max_attempts == 0 else test.max_attempts}</b>\n"
-        #  Vaqt HAQIQATAN sanaladi — o'quvchi buni oldindan bilishi shart
         + (
             f"⏳ Vaqt: <b>{fmt_duration(test.time_limit_sec)}</b> "
             f"<i>(hozir boshlandi)</i>\n"
             if test.time_limit_sec > 0 else ""
         )
-        + "\n"
+    )
+
+    if orders:
+        text += (
+            f"\n🎲 <b>RANDOM REJIM (Ko'chirishga qarshi):</b>\n"
+            f"📋 <b>Sizga tushgan savollar tartibi ({len(orders)} ta):</b>\n"
+            f"{format_question_order(orders)}\n\n"
+            f"💡 <i>Diqqat: Javoblarni yuborayotganda 1-savol o'rniga ro'yxatingizdagi 1-savol (#{orders[0]}) javobini, "
+            f"2-savol o'rniga 2-savol (#{orders[1]}) javobini yozasiz!</i>\n"
+        )
+
+    text += (
+        "\n"
         + (
             "Yuqoridagi rasmlarni ko'rib, savollarni yeching.\n\n"
             if media_count else ""
         )
         + "Tayyor bo'lsangiz 👇"
     )
+    return text
 
 
-def ask_answers(test: Test) -> str:
+def ask_answers(test: Test, attempt=None) -> str:
     """
     Javob so'rovi — kartochka SHU MATNGA aylanadi (yangi xabar emas).
 
     Namuna aynan shu testning savollar soniga moslanadi: o'quvchi
     nechta harf yozish kerakligini ko'rib turadi.
     """
-    count = test.questions_count
+    orders = None
+    if attempt and getattr(attempt, "question_order", None):
+        orders = [int(x) for x in attempt.question_order.split(",") if x.isdigit()]
+
+    count = len(orders) if orders else test.questions_count
     example = "".join("abcd"[index % 4] for index in range(min(count, 8)))
     tail = "…" if count > 8 else ""
 
-    return (
+    text = (
         "📨 <b>JAVOBLARNI YUBORING</b>\n"
         f"{LINE}\n\n"
         f"📝 <b>{escape(test.title)}</b>\n"
-        f"📊 Savollar: <b>{count} ta</b>\n\n"
+        f"📊 Savollar: <b>{count} ta</b>"
+        + (" <i>(🎲 Random tartibda)</i>\n\n" if orders else "\n\n")
+    )
+
+    if orders:
+        text += (
+            f"📋 <b>Sizga tushgan savollar tartibi:</b>\n"
+            f"{format_question_order(orders)}\n\n"
+            f"💡 <i>1-harf #{orders[0]} ga, 2-harf #{orders[1]} ga... ketma-ket yozing.</i>\n\n"
+        )
+
+    text += (
         f"Javoblaringizni <b>bitta xabarda</b> yuboring — "
         f"<b>{count} ta harf</b>:\n\n"
         f"<code>{example}{tail}</code>\n\n"
@@ -325,6 +385,7 @@ def ask_answers(test: Test) -> str:
         "✅ Katta/kichik harf farqi yo'q\n"
         "❗️ Har bir testga faqat <b>bir marta</b> javob berish mumkin"
     )
+    return text
 
 
 TEST_NOT_FOUND = (
@@ -380,9 +441,20 @@ def result(submit, *, hide_keys: bool = False) -> str:
             f"ℹ️ O'qituvchi hisobotiga belgi tushirildi."
         )
 
+    attempt = getattr(submit, "attempt", None)
+    orders = None
+    if attempt and getattr(attempt, "question_order", None):
+        orders = [int(x) for x in attempt.question_order.split(",") if x.isdigit()]
+
+    q_count_str = (
+        f"<b>{attempt.max_score} ta</b> (🎲 Random tartibda)"
+        if (attempt and orders)
+        else f"<b>{test.questions_count} ta</b>"
+    )
+
     lines = [
         f"📌 Test kodi: <b>{test.number}</b>",
-        f"📝 Savollar soni: <b>{test.questions_count} ta</b>",
+        f"📝 Savollar soni: {q_count_str}",
         f"👤 Test yaratuvchisi: {escape(test.author_name)}",
         "",
     ]
@@ -407,10 +479,13 @@ def result(submit, *, hide_keys: bool = False) -> str:
             lines.append(f"<b>Xatolar ({len(mistakes)} ta):</b>")
 
             for item in mistakes[:MAX_MISTAKES_SHOWN]:
-                number = f"{item.number}."
+                orig_q = item.original_number if getattr(item, "original_number", None) else (
+                    orders[item.number - 1] if (orders and item.number - 1 < len(orders)) else item.number
+                )
+                number = f"#{item.number}(#{orig_q})." if orders else f"{item.number}."
                 shown = item.given or "—"
                 lines.append(
-                    f"<code>{number:>4}</code> {shown} {item.icon}  to'g'risi: <b>{item.correct}</b>"
+                    f"<code>{number:>8}</code> {shown} {item.icon}  to'g'risi: <b>{item.correct}</b>"
                 )
 
             hidden = len(mistakes) - MAX_MISTAKES_SHOWN
@@ -426,14 +501,17 @@ def result(submit, *, hide_keys: bool = False) -> str:
     else:
         lines.append("<b>Natijalari:</b>")
         for item in submit.questions:
-            number = f"{item.number}."
+            orig_q = item.original_number if getattr(item, "original_number", None) else (
+                orders[item.number - 1] if (orders and item.number - 1 < len(orders)) else item.number
+            )
+            number = f"#{item.number}(#{orig_q})" if orders else f"{item.number}."
             shown = item.given or "—"
 
             if item.verdict is True:
-                lines.append(f"<code>{number:>4}</code> {shown} ✅   1 ball")
+                lines.append(f"<code>{number:>8}</code> {shown} ✅   1 ball")
             else:
                 lines.append(
-                    f"<code>{number:>4}</code> {shown} {item.icon}({item.correct})   0 ball"
+                    f"<code>{number:>8}</code> {shown} {item.icon}({item.correct})   0 ball"
                 )
 
     lines += [
@@ -760,14 +838,24 @@ def attempt_detail_text(attempt, explanations: dict | None = None) -> str:
     ]
 
     sub_key = (attempt.submitted_key or "").upper()
-    ans_key = (test.answer_key or "").upper() if test else ""
-    q_count = max(len(ans_key), len(sub_key), attempt.max_score)
+    if getattr(attempt, "effective_key", None):
+        ans_key = attempt.effective_key.upper()
+        q_count = attempt.max_score or len(ans_key)
+    else:
+        ans_key = (test.answer_key or "").upper() if test else ""
+        q_count = max(len(ans_key), len(sub_key), attempt.max_score)
+
+    orders = None
+    if getattr(attempt, "question_order", None):
+        orders = [int(x) for x in attempt.question_order.split(",") if x.isdigit()]
+
     expl_map = explanations or {}
 
     for i in range(1, q_count + 1):
         my_ans = sub_key[i - 1] if i - 1 < len(sub_key) else "-"
         correct_ans = ans_key[i - 1] if i - 1 < len(ans_key) else "?"
-        has_expl = i in expl_map or 0 in expl_map
+        orig_q = orders[i - 1] if (orders and i - 1 < len(orders)) else i
+        has_expl = orig_q in expl_map or 0 in expl_map
         expl_badge = " · 💡 [Yechimi bor]" if has_expl else ""
 
         if my_ans == "-":
@@ -780,7 +868,8 @@ def attempt_detail_text(attempt, explanations: dict | None = None) -> str:
             status_icon = "❌"
             detail = f"Siz: <b>{my_ans}</b> | To'g'ri: <b>{correct_ans}</b>"
 
-        lines.append(f"{status_icon} <b>#{i:02d}:</b> {detail}{expl_badge}")
+        q_label = f"#{i:02d} (Asl #{orig_q:02d}):" if orders else f"#{i:02d}:"
+        lines.append(f"{status_icon} <b>{q_label}</b> {detail}{expl_badge}")
 
     lines.append("")
     lines.append("💡 <i>Savollarning to'liq yechimlari va tushuntirishlarini ko'rish uchun quyidagi tugmani bosing:</i>")

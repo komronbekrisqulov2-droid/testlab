@@ -111,9 +111,6 @@ def main_menu(user: User) -> InlineKeyboardMarkup:
             InlineKeyboardButton(
                 text=uz.BTN_MY_TESTS, callback_data=MenuCB(action="mytests").pack()
             ),
-            InlineKeyboardButton(
-                text="👥 Guruhlarim (Sinflar)", callback_data=ClassCB(action="list").pack()
-            ),
         )
 
     builder.row(
@@ -124,21 +121,11 @@ def main_menu(user: User) -> InlineKeyboardMarkup:
             text=uz.BTN_MISTAKES, callback_data=MistakeCB(action="hub").pack()
         ),
     )
-    if not user.is_teacher:
-        builder.row(
-            InlineKeyboardButton(
-                text=uz.BTN_LEADERBOARD, callback_data=MenuCB(action="board").pack()
-            ),
-            InlineKeyboardButton(
-                text="👥 Guruhlarim", callback_data=ClassCB(action="student_list").pack()
-            ),
-        )
-    else:
-        builder.row(
-            InlineKeyboardButton(
-                text=uz.BTN_LEADERBOARD, callback_data=MenuCB(action="board").pack()
-            ),
-        )
+    builder.row(
+        InlineKeyboardButton(
+            text=uz.BTN_LEADERBOARD, callback_data=MenuCB(action="board").pack()
+        ),
+    )
 
 
     builder.row(
@@ -503,15 +490,6 @@ def test_manage_keyboard(test: Test) -> InlineKeyboardMarkup:
         InlineKeyboardButton(
             text=rand_text,
             callback_data=TestCB(action="random_menu", test_id=test.id).pack(),
-        )
-    )
-
-    cls_name = test.classroom.name if (test.classroom_id and test.classroom) else None
-    grp_text = f"👥 Guruh: {cls_name[:16]} 🔒" if cls_name else "👥 Guruhga biriktirish (Ochiq)"
-    builder.row(
-        InlineKeyboardButton(
-            text=grp_text,
-            callback_data=TestCB(action="group_menu", test_id=test.id).pack(),
         )
     )
 
@@ -964,13 +942,6 @@ def simple_back_keyboard() -> InlineKeyboardMarkup:
 def profile_keyboard(is_teacher: bool = False) -> InlineKeyboardMarkup:
     """Profil ekrani klaviaturasi."""
     builder = InlineKeyboardBuilder()
-    if not is_teacher:
-        builder.row(
-            InlineKeyboardButton(
-                text="👥 Mening guruhlarim",
-                callback_data=ClassCB(action="student_list").pack(),
-            )
-        )
     builder.row(
         InlineKeyboardButton(
             text=uz.BTN_LINK_PARENT,

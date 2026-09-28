@@ -217,7 +217,19 @@ async def start_building_command(message: Message, state: FSMContext) -> None:
     await message.answer(uz.CREATE_START)
 
 
-_user_locks: defaultdict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
+_user_locks: dict[int, asyncio.Lock] = {}
+
+
+def _get_user_lock(user_id: int) -> asyncio.Lock:
+    """Foydalanuvchi uchun lock qaytaradi va xotira to'lib ketishini oldini oladi."""
+    if len(_user_locks) > 200:
+        for uid in list(_user_locks.keys()):
+            lock = _user_locks.get(uid)
+            if lock and not lock.locked():
+                _user_locks.pop(uid, None)
+    if user_id not in _user_locks:
+        _user_locks[user_id] = asyncio.Lock()
+    return _user_locks[user_id]
 
 
 async def _add_photo(
@@ -234,7 +246,7 @@ async def _add_photo(
     """Rasmni qo'shadi va tasdiq yuboradi (albom poygasidan himoyalangan)."""
     catalog = CatalogService(session)
 
-    async with _user_locks[user.id]:
+    async with _get_user_lock(user.id):
         test = await _load_draft(session, state, user)
 
         #  Test aynan BIRINCHI RASM kelganda yaratiladi — foydalanuvchi
@@ -268,15 +280,27 @@ async def _add_photo(
 
         total = await catalog.media_count(test)
 
-        #  Albom yuborilganda har rasm uchun alohida xabar chiqmasin —
-        #  chat to'lib ketadi. Faqat birinchisiga javob beramiz.
-        if message.media_group_id and total > 1:
-            return
+        data = await state.get_data()
+        status_msg_id = data.get("media_status_msg_id")
 
-        await message.answer(
-            uz.photo_added(total),
-            reply_markup=building_keyboard(test.id, has_photo=True),
-        )
+        text = uz.photo_added(total)
+        kb = building_keyboard(test.id, has_photo=True)
+
+        #  Albom yuborilganda xabarni tahrirlaymiz, chat to'lib ketmasin
+        if message.media_group_id and status_msg_id:
+            try:
+                await message.bot.edit_message_text(
+                    text=text,
+                    chat_id=message.chat.id,
+                    message_id=status_msg_id,
+                    reply_markup=kb,
+                )
+                return
+            except Exception:
+                pass
+
+        sent = await message.answer(text, reply_markup=kb)
+        await state.update_data(media_status_msg_id=sent.message_id)
 
 
 @router.message(Building.active, F.photo)

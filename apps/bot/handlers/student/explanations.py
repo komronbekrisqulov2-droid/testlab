@@ -56,6 +56,30 @@ async def list_explanations(
         await safe_answer(callback, uz.NOT_FOUND, alert=True)
         return
 
+    from modules.assessment.repository import AttemptRepository
+
+    is_privileged = test.author_id == user.id or user.is_admin
+    if not is_privileged:
+        finished_count = await AttemptRepository(session).count_by_user_and_test(user.id, test.id)
+        if finished_count == 0:
+            await safe_answer(
+                callback,
+                "🔒 Savollar yechimini ko'rish uchun avval ushbu testni topshirishingiz kerak!",
+                alert=True,
+            )
+            return
+
+        if not test.show_answers or (test.ends_at is not None and not test.already_ended):
+            from core.datetime_utils import fmt_datetime
+
+            msg = "🔒 Ushbu test hali yakunlanmagan. To'liq yechimlar va tushuntirishlar "
+            if test.ends_at:
+                msg += f"test muddati tugagach ({fmt_datetime(test.ends_at)}) ochiladi."
+            else:
+                msg += "test yakunlangach ochiladi."
+            await safe_answer(callback, msg, alert=True)
+            return
+
     explanations = await catalog.get_explanations(test.id)
     q_count = len(test.answer_key) if test.answer_key else test.questions_count
 
@@ -86,6 +110,30 @@ async def view_explanation(
     if test is None:
         await safe_answer(callback, uz.NOT_FOUND, alert=True)
         return
+
+    from modules.assessment.repository import AttemptRepository
+
+    is_privileged = test.author_id == user.id or user.is_admin
+    if not is_privileged:
+        finished_count = await AttemptRepository(session).count_by_user_and_test(user.id, test.id)
+        if finished_count == 0:
+            await safe_answer(
+                callback,
+                "🔒 Savol yechimini ko'rish uchun avval ushbu testni topshirishingiz kerak!",
+                alert=True,
+            )
+            return
+
+        if not test.show_answers or (test.ends_at is not None and not test.already_ended):
+            from core.datetime_utils import fmt_datetime
+
+            msg = "🔒 Ushbu test hali yakunlanmagan. To'liq yechimlar va tushuntirishlar "
+            if test.ends_at:
+                msg += f"test muddati tugagach ({fmt_datetime(test.ends_at)}) ochiladi."
+            else:
+                msg += "test yakunlangach ochiladi."
+            await safe_answer(callback, msg, alert=True)
+            return
 
     explanations = await catalog.get_explanations(test.id)
     explanation = explanations.get(callback_data.q_num)
@@ -384,6 +432,19 @@ async def start_question_appeal(
     if test is None:
         await safe_answer(callback, uz.NOT_FOUND, alert=True)
         return
+
+    is_privileged = test.author_id == user.id or user.is_admin
+    if not is_privileged:
+        from modules.assessment.repository import AttemptRepository
+
+        finished_count = await AttemptRepository(session).count_by_user_and_test(user.id, test.id)
+        if finished_count == 0:
+            await safe_answer(
+                callback,
+                "⚠️ E'tiroz yo'llash uchun avval ushbu testni topshirgan bo'lishingiz kerak.",
+                alert=True,
+            )
+            return
 
     await state.set_state(QuestionAppealState.waiting_for_text)
     await state.update_data(test_id=test.id, q_num=callback_data.q_num)

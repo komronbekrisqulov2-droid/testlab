@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.datetime_utils import fmt_duration, utcnow
@@ -54,6 +55,7 @@ class QuestionResult:
     given: str | None      # o'quvchi tanlagan harf (katta), javobsiz bo'lsa None
     correct: str           # to'g'ri javob (katta harf)
     verdict: bool | None   # True / False / None (javobsiz)
+    original_number: int | None = None
 
     @property
     def icon(self) -> str:
@@ -158,6 +160,7 @@ class AssessmentService:
 
         if test.classroom_id is not None:
             from modules.classroom.repository import ClassroomRepository
+
             cls_repo = ClassroomRepository(self.session)
             is_mem = await cls_repo.is_member(test.classroom_id, user.id)
             if not is_mem and test.author_id != user.id and not user.is_admin:
@@ -191,12 +194,14 @@ class AssessmentService:
         Returns:
             Boshlangan urinish, yoki None (vaqt cheklanmagan bo'lsa).
         """
-        #  Yakunlanmagan urinish bormi? Bo'lsa davom ettiramiz —
-        #  o'quvchi tugmani ikki marta bosgani vaqtni qaytadan
-        #  boshlashi kerak emas.
+        #  Yakunlanmagan urinish bormi? Bo'lsa davom ettiramiz.
+        #  Agar muddati o'tib ketgan bo'lsa — uni yopib yangi tekshiramiz.
         active = await self.attempts.get_active(user.id, test.id)
         if active is not None:
-            return active
+            if active.is_expired:
+                await self.expire(active)
+            else:
+                return active
 
         if test.time_limit_sec <= 0 and not test.is_randomized:
             return None
@@ -211,8 +216,8 @@ class AssessmentService:
         if test.is_randomized and test.key_letters:
             import random
             total_q = len(test.key_letters)
-            if test.random_questions_count and 0 < test.random_questions_count < total_q:
-                k = test.random_questions_count
+            k = test.random_questions_count
+            if k and 0 < k < total_q:
                 order = random.sample(range(1, total_q + 1), k)
             else:
                 order = list(range(1, total_q + 1))
@@ -322,6 +327,9 @@ class AssessmentService:
         # Random test bo'lsa, aynan shu urinishga biriktirilgan aralashtirilgan kalitni olamiz
         if active is not None and active.effective_key:
             key = active.effective_key
+        elif test.is_randomized:
+            active = await self.begin(test, user)
+            key = active.effective_key if (active and active.effective_key) else test.key_letters
         else:
             key = test.key_letters
 
@@ -345,7 +353,8 @@ class AssessmentService:
                 hint="Javoblarni test raqamisiz yuboring yoki to'g'ri raqamni yozing.",
             )
 
-        results, correct, wrong, skipped = self._grade(key, parsed.letters)
+        order_map = [int(x) for x in active.question_order.split(",") if x.isdigit()] if (active and active.question_order) else None
+        results, correct, wrong, skipped = self._grade(key, parsed.letters, order_map=order_map)
 
         max_score = expected or 1
 
@@ -406,20 +415,32 @@ class AssessmentService:
 
         # Xatolar daftariga yozish (faqat diskvalifikatsiya bo'lmagan bo'lsa)
         if not is_disqualified:
-            order_map = [int(x) for x in active.question_order.split(",") if x.isdigit()] if (active and active.question_order) else None
-            for idx, q in enumerate(results):
+            for q in results:
                 if q.verdict is not True:
-                    real_q_num = order_map[idx] if (order_map and idx < len(order_map)) else q.number
-                    mistake = StudentMistake(
-                        user_id=user.id,
-                        test_id=test.id,
-                        attempt_id=attempt.id,
-                        question_number=real_q_num,
-                        given_answer=q.given or "-",
-                        correct_answer=q.correct,
-                        is_resolved=False,
+                    real_q_num = q.original_number if q.original_number is not None else q.number
+                    stmt = select(StudentMistake).where(
+                        StudentMistake.user_id == user.id,
+                        StudentMistake.test_id == test.id,
+                        StudentMistake.question_number == real_q_num,
+                        StudentMistake.is_resolved == False,
                     )
-                    self.session.add(mistake)
+                    existing_res = await self.session.execute(stmt)
+                    existing = existing_res.scalars().first()
+                    if existing is not None:
+                        existing.given_answer = q.given or "-"
+                        existing.correct_answer = q.correct
+                        existing.attempt_id = attempt.id
+                    else:
+                        mistake = StudentMistake(
+                            user_id=user.id,
+                            test_id=test.id,
+                            attempt_id=attempt.id,
+                            question_number=real_q_num,
+                            given_answer=q.given or "-",
+                            correct_answer=q.correct,
+                            is_resolved=False,
+                        )
+                        self.session.add(mistake)
 
             streak, streak_grew = await self.users.touch_streak(user)
             xp = await self._award_xp(user, attempt, streak_grew=streak_grew)
@@ -509,10 +530,12 @@ class AssessmentService:
                 StudentMistake.is_resolved == False,
             )
         res = await self.session.execute(stmt)
-        mistake = res.scalars().first()
-        if mistake:
-            mistake.is_resolved = True
-            mistake.resolved_at = utcnow()
+        mistakes_to_resolve = list(res.scalars().all())
+        if mistakes_to_resolve:
+            now_dt = utcnow()
+            for mistake in mistakes_to_resolve:
+                mistake.is_resolved = True
+                mistake.resolved_at = now_dt
             await self.session.commit()
             return True
         return False
@@ -536,7 +559,12 @@ class AssessmentService:
 
 
     @staticmethod
-    def _grade(key: str, submitted: str) -> tuple[list[QuestionResult], int, int, int]:
+    def _grade(
+        key: str,
+        submitted: str,
+        *,
+        order_map: list[int] | None = None,
+    ) -> tuple[list[QuestionResult], int, int, int]:
         """
         Javoblarni solishtiradi va savolma-savol natija tuzadi.
 
@@ -558,12 +586,14 @@ class AssessmentService:
             else:
                 skipped += 1
 
+            orig_num = order_map[index] if (order_map and index < len(order_map)) else (index + 1)
             results.append(
                 QuestionResult(
                     number=index + 1,
                     given=None if given == BLANK else given.upper(),
                     correct=key[index].upper(),
                     verdict=verdict,
+                    original_number=orig_num,
                 )
             )
 
@@ -618,15 +648,26 @@ class AssessmentService:
             return []
 
         attempts = await self.attempts.list_all_by_test(test.id)
-        max_score = len(key)
         changes: list[Recalculated] = []
 
         for attempt in attempts:
             before_percentage = attempt.percentage
             before_passed = attempt.is_passed
 
+            if attempt.question_order:
+                order = [int(x) for x in attempt.question_order.split(",") if x.isdigit()]
+                effective_key = "".join(key[i - 1] for i in order if 0 < i <= len(key))
+                attempt.effective_key = effective_key
+                attempt_key = effective_key
+                max_score = len(order)
+                order_map = order
+            else:
+                attempt_key = key
+                max_score = len(key)
+                order_map = None
+
             results, correct, wrong, skipped = self._grade(
-                key, attempt.submitted_key or ""
+                attempt_key, attempt.submitted_key or "", order_map=order_map
             )
 
             percentage = round(correct / max_score * 100, 1) if max_score else 0.0
@@ -700,13 +741,8 @@ class AssessmentService:
 
         Hisob `submitted_key` va `answer_key` ni solishtirish orqali —
         qo'shimcha jadval ham, so'rov ham kerak emas.
-
-        Har bir qatorda `top_wrong` ham bor: xato javob berganlarning
-        ko'pchiligi QAYSI harfni tanlagani. Bu shunchaki «savol qiyin»
-        degandan foydaliroq — u qaysi chalg'ituvchi variant ishlaganini
-        ko'rsatadi. Va agar deyarli hamma bir xil xato qilgan bo'lsa,
-        `suspect_key` bayrog'i ko'tariladi: ehtimol savol emas,
-        KALITNING O'ZI noto'g'ri.
+        Randomizatsiyalangan testlarda har bir o'quvchining `question_order`i
+        bo'yicha haqiqiy savol raqamiga to'g'ri ulanadi.
         """
         key = test.key_letters
         if not key:
@@ -718,28 +754,46 @@ class AssessmentService:
         correct = [0] * len(key)
         wrong = [0] * len(key)
         skipped = [0] * len(key)
+        presented = [0] * len(key)
         #  Har bir savol uchun: {tanlangan harf -> necha marta}
         chosen: list[dict[str, int]] = [{} for _ in key]
 
         for attempt in attempts:
             submitted = attempt.submitted_key or ""
-
-            for index, verdict in enumerate(compare(key, submitted)):
-                if index >= len(key):
-                    break
-
-                if verdict is True:
-                    correct[index] += 1
-                elif verdict is False:
-                    wrong[index] += 1
-                    letter = submitted[index].upper()
-                    chosen[index][letter] = chosen[index].get(letter, 0) + 1
-                else:
-                    skipped[index] += 1
+            if attempt.question_order:
+                order = [int(x) for x in attempt.question_order.split(",") if x.isdigit()]
+                for idx, orig_q in enumerate(order):
+                    orig_idx = orig_q - 1
+                    if 0 <= orig_idx < len(key):
+                        presented[orig_idx] += 1
+                        given = submitted[idx] if idx < len(submitted) else BLANK
+                        expected_letter = key[orig_idx].upper()
+                        if given == BLANK:
+                            skipped[orig_idx] += 1
+                        elif given.upper() == expected_letter:
+                            correct[orig_idx] += 1
+                        else:
+                            wrong[orig_idx] += 1
+                            letter = given.upper()
+                            chosen[orig_idx][letter] = chosen[orig_idx].get(letter, 0) + 1
+            else:
+                for index, verdict in enumerate(compare(key, submitted)):
+                    if index >= len(key):
+                        break
+                    presented[index] += 1
+                    if verdict is True:
+                        correct[index] += 1
+                    elif verdict is False:
+                        wrong[index] += 1
+                        letter = submitted[index].upper()
+                        chosen[index][letter] = chosen[index].get(letter, 0) + 1
+                    else:
+                        skipped[index] += 1
 
         rows: list[dict[str, object]] = []
         for index in range(len(key)):
-            rate = correct[index] / total if total else 0.0
+            q_presented = presented[index] if presented[index] > 0 else total
+            rate = correct[index] / q_presented if q_presented else 0.0
 
             #  Eng ko'p tanlangan xato variant. Teng bo'lsa alifbo
             #  tartibida — natija yurishdan yurishga o'zgarmasin.
@@ -757,13 +811,13 @@ class AssessmentService:
                 "wrong": wrong[index],
                 "skipped": skipped[index],
                 "rate": rate,
-                "note": self._difficulty_note(rate, total),
+                "note": self._difficulty_note(rate, q_presented),
                 "top_wrong": top_letter,
                 "top_wrong_count": top_count,
                 "suspect_key": self._is_suspect_key(
                     correct=correct[index],
                     top_wrong_count=top_count,
-                    participants=total,
+                    participants=q_presented,
                 ),
             })
 
