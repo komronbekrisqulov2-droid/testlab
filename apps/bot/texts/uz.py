@@ -55,6 +55,8 @@ BTN_ADMIN = "🛠 Admin panel"
 BTN_UNDO_PHOTO = "⬅️ Oxirgi rasmni o'chirish"
 BTN_SHOW_IMAGES = "🖼 Test rasmlarini ko'rish"
 BTN_PARTICIPANTS = "👥 Javob berganlar"
+BTN_TEST_PARTICIPANTS = "👥 Testni ishlaganlar"
+BTN_TEST_SOLVERS = "👥 Testni ishlaganlar"
 BTN_EXCEL = "📊 Excel jadval"
 BTN_ANALYSIS = "📈 Savollar tahlili"
 BTN_PUBLISH = "🚀 E'lon qilish"
@@ -135,7 +137,7 @@ def registered(user: User) -> str:
 
 def main_menu(user: User, stats: dict) -> str:
     lines = [
-        f"🎓 <b>TestLab</b>",
+        "🎓 <b>TestLab</b>",
         LINE,
         "",
         f"👤 {escape(user.full_name)}",
@@ -293,7 +295,7 @@ def test_card(test: Test, media_count: int) -> str:
             "Yuqoridagi rasmlarni ko'rib, savollarni yeching.\n\n"
             if media_count else ""
         )
-        + f"Tayyor bo'lsangiz 👇"
+        + "Tayyor bo'lsangiz 👇"
     )
 
 
@@ -478,7 +480,7 @@ def my_tests_page(page, total: int) -> str:
 
     if not page.items:
         lines.append("<i>Hali test yaratmagansiz.</i>\n")
-        lines.append(f"💡 Bitta xabarda yarating: <code>Nom+abcdabcd</code>")
+        lines.append("💡 Bitta xabarda yarating: <code>Nom+abcdabcd</code>")
         return "\n".join(lines)
 
     for test in page.items:
@@ -517,38 +519,58 @@ def test_manage(test: Test, media_count: int, participants: int) -> str:
 #  JAVOB BERGANLAR
 # ======================================================================
 
-def participants_page(test: Test, page, start: int) -> str:
+def participants_page(test: Test, page, start: int = 0) -> str:
+    """
+    Testni ishlaganlar ro'yxati (reyting tartibida).
+    Format:
+    1-test haqida ma'lumotlar
+
+    📋Test nomi:  Matematika
+    📝Test kodi: 1
+    🔢Savollar soni: 30 ta
+    👤Test yaratuvchisi: Saxobiddin Karimov
+    Testda qatnashganlar soni: 39
+
+    1. Ismoilov Suxrobjon 29 ball
+    2. Shamshodbek Hamdamqulov 29 ball
+    ...
+    """
+    questions_cnt = test.questions_count or (len(test.answer_key) if test.answer_key else 0)
+
+    if test.author:
+        if getattr(test.author, "telegram_id", None):
+            author_str = f'<a href="tg://user?id={test.author.telegram_id}">{escape(test.author.full_name)}</a>'
+        else:
+            author_str = escape(test.author.full_name)
+    else:
+        author_str = "Noma'lum"
+
+    header_test = f"{test.number}-test" if test.number else escape(test.title)
+
     lines = [
-        "👥 <b>JAVOB BERGANLAR</b>",
-        LINE,
+        f"{header_test} haqida ma'lumotlar",
         "",
-        f"📝 <b>{escape(test.title)}</b>",
-        f"🔑 Kod: <b>{test.number}</b>",
-        f"📊 Jami: <b>{page.total} ta</b>",
+        f"📋Test nomi:  {escape(test.title)}",
+        f"📝Test kodi: {test.number or '—'}",
+        f"🔢Savollar soni: {questions_cnt} ta",
+        f"👤Test yaratuvchisi: {author_str}",
+        f"Testda qatnashganlar soni: {page.total}",
         "",
     ]
 
     if page.is_empty:
-        lines.append("<i>Hali hech kim javob bermagan.</i>")
-        return "\n".join(lines)
+        lines.append("<i>Hali hech kim test ishlamagan.</i>")
+    else:
+        for offset, attempt in enumerate(page.items, start=start + 1):
+            name = escape(attempt.user.full_name) if attempt.user else "—"
+            score = attempt.score if attempt.score is not None else attempt.correct_count
+            lines.append(f"{offset}. {name} {score} ball")
 
-    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-
-    for offset, attempt in enumerate(page.items, start=start + 1):
-        name = escape(attempt.user.full_name) if attempt.user else "—"
-        mark = "✅" if attempt.is_passed else "❌"
-        medal = medals.get(offset, f"<code>{offset:>2}.</code>")
-
-        lines.append(
-            f"{medal} <b>{name}</b>\n"
-            f"     {mark} {attempt.percentage:g}% "
-            f"({attempt.correct_count}/{attempt.max_score}) · {attempt.grade or '—'}"
-        )
-
-    lines += ["", LINE]
     if page.pages > 1:
-        lines.append(f"Sahifa <b>{page.page}/{page.pages}</b>")
-    lines.append(f"💡 To'liq ma'lumot uchun «{BTN_EXCEL}» bosing.")
+        lines += [
+            "",
+            f"📄 Sahifa: <b>{page.page}/{page.pages}</b>",
+        ]
 
     return "\n".join(lines)
 
@@ -954,7 +976,7 @@ def admin_user_card(user: User, stats: dict) -> str:
     ]
 
     if user.is_banned:
-        lines += ["", f"🚫 <b>BLOKLANGAN</b>"]
+        lines += ["", "🚫 <b>BLOKLANGAN</b>"]
         if user.ban_reason:
             lines.append(f"<i>Sabab: {escape(user.ban_reason)}</i>")
 

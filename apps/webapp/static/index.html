@@ -816,6 +816,14 @@
         updateMediaDisplay();
       }
 
+      // Saqlangan javoblarni tiklash (refresh yoki internet uzilishiga qarshi)
+      try {
+        const saved = localStorage.getItem(`testlab_answers_${testId}`);
+        if (saved) {
+          answers = JSON.parse(saved);
+        }
+      } catch (e) {}
+
       renderQuestion();
       renderMatrix();
       initWatermark();
@@ -958,6 +966,10 @@
         }
       }
 
+      try {
+        localStorage.setItem(`testlab_answers_${testId}`, JSON.stringify(answers));
+      } catch (e) {}
+
       renderQuestion();
       renderMatrix();
     }
@@ -1070,6 +1082,7 @@
         if (res.ok && data.ok) {
           isTestCompleted = true;
           if (timerInterval) clearInterval(timerInterval);
+          try { localStorage.removeItem(`testlab_answers_${testId}`); } catch (e) {}
 
           if (data.disqualified) {
             modalBox.innerHTML = `

@@ -146,11 +146,17 @@ async def handle_api_media(request: web.Request) -> web.Response:
             await bot.download_file(tg_file.file_path, destination=buf)
             data = buf.getvalue()
 
-            content_type = "image/jpeg"
-            if tg_file.file_path.endswith(".png"):
+            file_lower = (tg_file.file_path or "").lower()
+            if file_lower.endswith(".png"):
                 content_type = "image/png"
-            elif tg_file.file_path.endswith(".webp"):
+            elif file_lower.endswith(".webp"):
                 content_type = "image/webp"
+            elif file_lower.endswith(".gif"):
+                content_type = "image/gif"
+            elif file_lower.endswith(".pdf"):
+                content_type = "application/pdf"
+            else:
+                content_type = "image/jpeg"
 
             if len(_media_cache) >= 100:
                 _media_cache.pop(next(iter(_media_cache)), None)
@@ -224,8 +230,8 @@ async def handle_api_submit(request: web.Request) -> web.Response:
             # Foydalanuvchiga xatolik emas, oxirgi urinishini chiroyli ko'rsatamiz
             from modules.assessment.repository import AttemptRepository
             attempt_repo = AttemptRepository(session)
-            attempts = await attempt_repo.list_by_user(user.id, limit=10)
-            matching = [a for a in attempts if a.test_id == test.id and a.is_finished]
+            attempt_page = await attempt_repo.list_by_user(user.id, page=1, per_page=10)
+            matching = [a for a in attempt_page.items if a.test_id == test.id and a.is_finished]
             if matching:
                 last_attempt = matching[0]
                 return web.json_response({
@@ -297,15 +303,13 @@ async def handle_api_submit(request: web.Request) -> web.Response:
                 # Ota-ona / repetitorlarga bildirishnoma
                 parents = await user_repo.get_parent_links(user.id)
                 for link in parents:
-                    parent_user = await user_repo.get(link.parent_user_id)
-                    if parent_user:
-                        try:
-                            await bot.send_message(
-                                parent_user.telegram_id,
-                                uz.parent_result_notification(submit, user),
-                            )
-                        except Exception:
-                            pass
+                    try:
+                        await bot.send_message(
+                            link.parent_telegram_id,
+                            uz.parent_notification(submit, user),
+                        )
+                    except Exception:
+                        pass
 
             except Exception as notify_err:
                 log.warning("Mini App orqali yuborilgan natijani botga chiqarishda xato: %s", notify_err)
@@ -465,9 +469,9 @@ async def handle_api_analysis_generate(request: web.Request) -> web.Response:
 
         parts = [{"text": prompt}] + image_parts
 
-        model_name = settings.gemini.model or "gemini-2.5-flash"
+        model_name = settings.gemini.model or "gemini-flash-lite-latest"
         models_to_try = []
-        for m in [model_name, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]:
+        for m in [model_name, "gemini-flash-lite-latest", "gemini-flash-latest", "gemini-pro-latest", "gemini-2.5-flash"]:
             if m and m not in models_to_try:
                 models_to_try.append(m)
 
@@ -601,9 +605,9 @@ async def handle_api_analysis_chat(request: web.Request) -> web.Response:
 
         parts = [{"text": prompt}] + image_parts
 
-        model_name = settings.gemini.model or "gemini-2.5-flash"
+        model_name = settings.gemini.model or "gemini-flash-lite-latest"
         models_to_try = []
-        for m in [model_name, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]:
+        for m in [model_name, "gemini-flash-lite-latest", "gemini-flash-latest", "gemini-pro-latest", "gemini-2.5-flash"]:
             if m and m not in models_to_try:
                 models_to_try.append(m)
 

@@ -28,7 +28,6 @@ from apps.bot.states import (
 )
 from apps.bot.texts import uz
 from apps.bot.utils import safe_answer, safe_edit
-from core.exceptions import TestLabError
 from core.logging import get_logger
 from modules.assessment.service import AssessmentService
 from modules.catalog.service import CatalogService
@@ -470,8 +469,8 @@ async def submit_question_appeal(
                 log.warning("O'qituvchiga murojaat xabari bormadi: %s", notify_err)
 
     await message.answer(
-        f"✅ <b>Murojaatingiz qabul qilindi!</b>\n\n"
-        f"Savolingiz test muallifiga yetkazildi. O'qituvchi javob berishi bilan bot sizga bildirishnoma yuboradi.",
+        "✅ <b>Murojaatingiz qabul qilindi!</b>\n\n"
+        "Savolingiz test muallifiga yetkazildi. O'qituvchi javob berishi bilan bot sizga bildirishnoma yuboradi.",
         reply_markup=home_keyboard(),
     )
 
@@ -564,7 +563,7 @@ async def submit_teacher_appeal_reply(
             log.warning("O'quvchiga javob bormadi: %s", send_err)
 
     await message.answer(
-        f"✅ <b>Javobingiz o'quvchiga muvaffaqiyatli yuborildi!</b>",
+        "✅ <b>Javobingiz o'quvchiga muvaffaqiyatli yuborildi!</b>",
         reply_markup=home_keyboard(),
     )
 

@@ -17,25 +17,28 @@ from aiogram.types import (
     BufferedInputFile,
     CallbackQuery,
     InlineKeyboardButton,
-    InlineKeyboardMarkup,
     Message,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.bot.keyboards.callbacks import AttemptCB, CertCB, MenuCB
+from apps.bot.keyboards.callbacks import AdminCB, AttemptCB, CertCB, MenuCB, PeopleCB, TestCB
 from apps.bot.keyboards.inline import (
     attempt_detail_keyboard,
     home_button,
     home_keyboard,
+    participants_keyboard,
     result_keyboard,
 )
 from apps.bot.texts import uz
 from apps.bot.utils import safe_answer, safe_edit
 from core.exceptions import TestLabError
 from core.logging import get_logger
+from core.security.permissions import Permission
 from modules.assessment.repository import AttemptRepository
 from modules.certification.service import CertificateService
+from modules.catalog.models import TestStatus
+from modules.catalog.service import CatalogService
 from modules.identity.models import User
 from modules.media import result_card
 
@@ -348,6 +351,70 @@ async def view_attempt_analysis(
         has_mistakes=has_mistakes,
         can_certify=can_certify,
         page=callback_data.page,
+    )
+
+    await safe_edit(callback, text, reply_markup=keyboard)
+
+
+# ======================================================================
+#  TESTNI ISHLAGANLAR RO'YXATI
+# ======================================================================
+
+@router.callback_query(PeopleCB.filter(F.action == "list"))
+async def show_participants(
+    callback: CallbackQuery,
+    callback_data: PeopleCB,
+    user: User,
+    session: AsyncSession,
+) -> None:
+    """Testni ishlaganlar ro'yxati (reyting tartibida)."""
+    await safe_answer(callback)
+
+    catalog = CatalogService(session)
+    test = await catalog.tests.get_full(callback_data.test_id)
+    if test is None:
+        await safe_answer(callback, uz.NOT_FOUND, alert=True)
+        return
+
+    # Qoralama bo'lsa va muallif/admin bo'lmasa ko'rsatmaymiz
+    if test.status == TestStatus.DRAFT.value and test.author_id != user.id and not user.is_admin:
+        await safe_answer(callback, uz.NOT_FOUND, alert=True)
+        return
+
+    # Yopiq sinf/guruh testi bo'lsa a'zolikni tekshiramiz
+    if test.classroom_id is not None and test.author_id != user.id and not user.is_admin:
+        from modules.classroom.repository import ClassroomRepository
+        cls_repo = ClassroomRepository(session)
+        is_mem = await cls_repo.is_member(test.classroom_id, user.id)
+        if not is_mem:
+            await safe_answer(callback, "🔒 Bu test faqat maxsus guruh o'quvchilari uchun.", alert=True)
+            return
+
+    attempts = AttemptRepository(session)
+    per_page = 25
+    page = await attempts.list_by_test(
+        test.id,
+        page=max(1, callback_data.page),
+        per_page=per_page,
+        by_rank=True,
+    )
+
+    if test.author_id == user.id:
+        back = TestCB(action="manage", test_id=test.id).pack()
+        can_excel = True
+    elif user.can(Permission.RESULTS_VIEW_ANY):
+        back = AdminCB(action="tests", page=1).pack()
+        can_excel = True
+    else:
+        back = TestCB(action="open", test_id=test.id).pack()
+        can_excel = False
+
+    text = uz.participants_page(test, page, start=page.start_index)
+    keyboard = participants_keyboard(
+        test.id,
+        page,
+        back_callback=back,
+        can_excel=can_excel,
     )
 
     await safe_edit(callback, text, reply_markup=keyboard)

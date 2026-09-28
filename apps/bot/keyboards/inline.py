@@ -343,6 +343,13 @@ def test_card_keyboard(test_id: int, *, has_images: bool) -> InlineKeyboardMarku
             )
         )
 
+    builder.row(
+        InlineKeyboardButton(
+            text=uz.BTN_TEST_PARTICIPANTS,
+            callback_data=PeopleCB(action="list", test_id=test_id, page=1).pack(),
+        )
+    )
+
     builder.row(home_button())
     return builder.as_markup()
 
@@ -425,7 +432,7 @@ def result_keyboard(
         )
     builder.row(
         InlineKeyboardButton(
-            text=uz.BTN_LEADERBOARD,
+            text=uz.BTN_TEST_PARTICIPANTS,
             callback_data=PeopleCB(action="list", test_id=test_id, page=1).pack(),
         )
     )
@@ -722,10 +729,11 @@ def participants_keyboard(
     page: Page,
     *,
     back_callback: str,
+    can_excel: bool = False,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
-    if not page.is_empty:
+    if can_excel and not page.is_empty:
         builder.row(
             InlineKeyboardButton(
                 text=uz.BTN_EXCEL,
@@ -860,7 +868,7 @@ def attempt_detail_keyboard(
     page: int = 1,
 ) -> InlineKeyboardMarkup:
     """Bitta yechilgan test tahlili ekrani tugmalari."""
-    from apps.bot.keyboards.callbacks import AppealCB, AttemptCB, CertCB, ExplainCB, MistakeCB
+    from apps.bot.keyboards.callbacks import AttemptCB, CertCB, ExplainCB, MistakeCB
 
     builder = InlineKeyboardBuilder()
 

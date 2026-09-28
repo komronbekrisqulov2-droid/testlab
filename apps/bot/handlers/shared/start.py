@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from aiogram import F, Router
-from aiogram.filters import Command, CommandObject, CommandStart, StateFilter
+from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
     CallbackQuery,
@@ -346,8 +346,8 @@ def _validate_full_name(raw: str) -> tuple[tuple[str, str] | None, str | None]:
     if len(parts) < 2:
         return None, uz.FULL_NAME_INVALID
 
-    # Harflar, apostrof va defis
-    name_pattern = re.compile(r"^[A-Za-zА-Яа-яЁёЎўҚқҒғҲҳ\'-]+$")
+    # Harflar, apostrof, nuqta va defis (masalan: A. Navoiy)
+    name_pattern = re.compile(r"^[A-Za-zА-Яа-яЁёЎўҚқҒғҲҳ\'\.\-]+$")
     for part in parts:
         if not name_pattern.match(part) or len(part) < 2:
             return None, uz.FULL_NAME_INVALID

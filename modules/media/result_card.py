@@ -13,7 +13,7 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 
-from PIL import Image, ImageDraw
+from PIL import ImageDraw
 
 from core.config import settings
 from core.datetime_utils import fmt_date, utcnow

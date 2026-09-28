@@ -15,8 +15,8 @@ from aiogram.types import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.bot.filters import HasPermission, IsRegistered
-from apps.bot.keyboards.callbacks import ClassCB, MenuCB
+from apps.bot.filters import IsRegistered
+from apps.bot.keyboards.callbacks import ClassCB
 from apps.bot.keyboards.inline import (
     back_button,
     classroom_detail_keyboard,
@@ -32,8 +32,6 @@ from apps.bot.texts import uz
 from apps.bot.utils import safe_answer, safe_edit
 from core.config import settings
 from core.logging import get_logger
-from core.security.permissions import Permission
-from modules.catalog.service import CatalogService
 from modules.classroom.models import Classroom
 from modules.classroom.repository import ClassroomRepository
 from modules.identity.models import User
@@ -445,7 +443,6 @@ async def view_classroom_tests(
         await safe_answer(callback, uz.NO_PERMISSION, alert=True)
         return
 
-    catalog = CatalogService(session)
     # Guruhga tegishli testlar
     tests = classroom.tests or []
 

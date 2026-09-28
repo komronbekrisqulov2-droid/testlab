@@ -907,10 +907,10 @@
           <div class="chat-panel" id="chatPanel_${qNum}" style="display: none;">
             <div class="quick-chips">
               <span class="chip-label">Tezkor:</span>
-              <button type="button" class="quick-chip" onclick="quickPrompt(${qNum}, 'Qayta hisobla va tekshir')">🔄 Qayta hisobla</button>
-              <button type="button" class="quick-chip" onclick="quickPrompt(${qNum}, 'Formulasi va qoidasini ham qo\\'shib tushuntir')">📐 Formula qo\\'sh</button>
-              <button type="button" class="quick-chip" onclick="quickPrompt(${qNum}, 'O\\'quvchiga yanada soddaroq tushunarli qilib yoz')">💡 Soddaroq qil</button>
-              <button type="button" class="quick-chip" onclick="quickPrompt(${qNum}, 'Qisqa va lo\\'nda qilib ber')">✂️ Qisqartir</button>
+              <button type="button" class="quick-chip" data-prompt="Qayta hisobla va tekshir" onclick="quickPrompt(${qNum}, this.dataset.prompt)">🔄 Qayta hisobla</button>
+              <button type="button" class="quick-chip" data-prompt="Formulasi va qoidasini ham qo'shib tushuntir" onclick="quickPrompt(${qNum}, this.dataset.prompt)">📐 Formula qo'sh</button>
+              <button type="button" class="quick-chip" data-prompt="O'quvchiga yanada soddaroq tushunarli qilib yoz" onclick="quickPrompt(${qNum}, this.dataset.prompt)">💡 Soddaroq qil</button>
+              <button type="button" class="quick-chip" data-prompt="Qisqa va lo'nda qilib ber" onclick="quickPrompt(${qNum}, this.dataset.prompt)">✂️ Qisqartir</button>
             </div>
             <div class="chat-messages" id="chatMessages_${qNum}">
               <div class="chat-hint">🤖 Savol izohida xatolik bormi? Masalan: "52-19=33 emas, qayta hisobla" yoki "Masala shartini yaxshiroq tushuntir" deb yozing.</div>

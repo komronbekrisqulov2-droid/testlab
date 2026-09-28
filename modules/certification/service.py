@@ -9,7 +9,6 @@ undaydi.
 from __future__ import annotations
 
 import secrets
-from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession

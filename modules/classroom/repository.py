@@ -16,7 +16,6 @@ from core.logging import get_logger
 from modules.assessment.models import Attempt, AttemptStatus
 from modules.catalog.models import Test
 from modules.classroom.models import Classroom, ClassroomMember
-from modules.identity.models import User
 
 log = get_logger(__name__)
 

@@ -21,7 +21,6 @@ from apps.bot.keyboards.inline import (
     back_button,
     confirm_delete_keyboard,
     home_button,
-    home_keyboard,
     my_tests_keyboard,
     participants_keyboard,
     test_edit_keyboard,
@@ -515,11 +514,11 @@ async def start_schedule_start(
     )
     if callback.message:
         await callback.message.answer(
-            f"📅 <b>Test ochilish vaqtini kiriting:</b>\n\n"
-            f"Formatlar:\n"
-            f"• Bugun uchun: <code>14:30</code>\n"
-            f"• Sana bilan: <code>22.09 14:30</code> yoki <code>22.09.2026 14:30</code>\n\n"
-            f"<i>Bekor qilish uchun /cancel yuboring.</i>",
+            "📅 <b>Test ochilish vaqtini kiriting:</b>\n\n"
+            "Formatlar:\n"
+            "• Bugun uchun: <code>14:30</code>\n"
+            "• Sana bilan: <code>22.09 14:30</code> yoki <code>22.09.2026 14:30</code>\n\n"
+            "<i>Bekor qilish uchun /cancel yuboring.</i>",
             reply_markup=cancel_kb,
         )
 
@@ -548,11 +547,11 @@ async def start_schedule_end(
     )
     if callback.message:
         await callback.message.answer(
-            f"🏁 <b>Test yopilish vaqtini kiriting:</b>\n\n"
-            f"Formatlar:\n"
-            f"• Bugun uchun: <code>21:00</code>\n"
-            f"• Sana bilan: <code>22.09 21:00</code> yoki <code>22.09.2026 21:00</code>\n\n"
-            f"<i>Bekor qilish uchun /cancel yuboring.</i>",
+            "🏁 <b>Test yopilish vaqtini kiriting:</b>\n\n"
+            "Formatlar:\n"
+            "• Bugun uchun: <code>21:00</code>\n"
+            "• Sana bilan: <code>22.09 21:00</code> yoki <code>22.09.2026 21:00</code>\n\n"
+            "<i>Bekor qilish uchun /cancel yuboring.</i>",
             reply_markup=cancel_kb,
         )
 
@@ -780,43 +779,6 @@ async def show_images(
 # ======================================================================
 #  JAVOB BERGANLAR
 # ======================================================================
-
-@router.callback_query(PeopleCB.filter(F.action == "list"))
-async def show_participants(
-    callback: CallbackQuery,
-    callback_data: PeopleCB,
-    user: User,
-    session: AsyncSession,
-) -> None:
-    """Testni yechganlar ro'yxati (reyting tartibida)."""
-    await safe_answer(callback)
-
-    test = await _load_owned(session, callback_data.test_id, user)
-    if test is None:
-        await safe_answer(callback, uz.NO_PERMISSION, alert=True)
-        return
-
-    attempts = AttemptRepository(session)
-    page = await attempts.list_by_test(
-        test.id,
-        page=max(1, callback_data.page),
-        per_page=PER_PAGE_PEOPLE,
-        by_rank=True,
-    )
-
-    #  Admin begona testni ko'rayotgan bo'lsa admin paneliga qaytadi
-    back = (
-        TestCB(action="manage", test_id=test.id).pack()
-        if test.author_id == user.id
-        else AdminCB(action="tests", page=1).pack()
-    )
-
-    await safe_edit(
-        callback,
-        uz.participants_page(test, page, page.start_index),
-        reply_markup=participants_keyboard(test.id, page, back_callback=back),
-    )
-
 
 @router.callback_query(PeopleCB.filter(F.action == "analysis"))
 async def show_analysis(

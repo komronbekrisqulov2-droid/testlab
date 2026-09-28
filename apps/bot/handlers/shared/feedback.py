@@ -13,7 +13,6 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.bot.keyboards.callbacks import FeedbackCB
 from apps.bot.keyboards.inline import admin_feedback_reply_keyboard, home_keyboard

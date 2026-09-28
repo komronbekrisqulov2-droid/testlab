@@ -147,7 +147,7 @@ def _start_scheduler(bot: Bot) -> None:
 
 async def _start_webapp(bot: Bot) -> None:
     """Telegram Mini App serverini ishga tushiradi."""
-    global _webapp_runner, _tunnel_urls
+    global _webapp_runner
     if not settings.webapp.enabled:
         return
     try:
@@ -223,7 +223,6 @@ async def on_shutdown(bot: Bot) -> None:
         _scheduler.shutdown(wait=False)
         log.info("⏱  Fon vazifalari to'xtatildi")
 
-    global _webapp_runner
     try:
         from core.tunnel import stop_cloudflare_tunnel
         stop_cloudflare_tunnel()

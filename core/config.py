@@ -15,6 +15,7 @@ from __future__ import annotations
 import sys
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from pydantic import Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -346,7 +347,7 @@ class GeminiSettings(BaseSettings):
     )
 
     api_key: str = Field(default="", alias="GEMINI_API_KEY")
-    model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    model: str = Field(default="gemini-flash-lite-latest", alias="GEMINI_MODEL")
 
 
 # ======================================================================

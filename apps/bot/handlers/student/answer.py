@@ -15,18 +15,19 @@ from __future__ import annotations
 from aiogram import F, Router
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.bot.filters import IsRegistered
-from apps.bot.keyboards.callbacks import MenuCB, PageCB, TestCB
+from apps.bot.keyboards.callbacks import MenuCB, PageCB, PeopleCB, TestCB
 from apps.bot.keyboards.inline import (
     answering_keyboard,
+    home_button,
     home_keyboard,
     notification_keyboard,
     personal_ranking_keyboard,
     profile_keyboard,
-    result_keyboard,
     results_keyboard,
     simple_back_keyboard,
     test_card_keyboard,
@@ -85,9 +86,17 @@ async def open_test(
     try:
         await assessment.ensure_can_answer(test, user)
     except TestLabError as error:
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(
+                text=uz.BTN_TEST_PARTICIPANTS,
+                callback_data=PeopleCB(action="list", test_id=test.id, page=1).pack(),
+            )
+        )
+        builder.row(home_button())
         await message.answer(
             f"⚠️ {error.user_text()}",
-            reply_markup=home_keyboard(),
+            reply_markup=builder.as_markup(),
         )
         return
 

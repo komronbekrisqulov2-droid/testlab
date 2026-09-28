@@ -11,7 +11,7 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from apps.bot.keyboards.callbacks import AdminCB, MenuCB
+from apps.bot.keyboards.callbacks import AdminCB
 from apps.bot.keyboards.inline import back_button, home_button, pagination_row
 from apps.bot.texts import uz
 from core.config import settings
