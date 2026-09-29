@@ -30,6 +30,7 @@ from apps.bot.keyboards.inline import (
     building_keyboard,
     home_keyboard,
     published_keyboard,
+    simple_back_keyboard,
 )
 from apps.bot.states import Building
 from apps.bot.texts import uz
@@ -207,17 +208,17 @@ async def start_building(callback: CallbackQuery, state: FSMContext) -> None:
     await safe_answer(callback)
     await state.clear()
     await state.set_state(Building.active)
-    await safe_edit(callback, uz.CREATE_START)
+    await safe_edit(callback, uz.CREATE_START, reply_markup=simple_back_keyboard())
 
 
 @router.message(Command("new"))
 async def start_building_command(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(Building.active)
-    await message.answer(uz.CREATE_START)
+    await message.answer(uz.CREATE_START, reply_markup=simple_back_keyboard())
 
 
-_user_locks: dict[int, asyncio.Lock] = {}
+_user_locks: defaultdict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
 
 
 def _get_user_lock(user_id: int) -> asyncio.Lock:
@@ -227,8 +228,6 @@ def _get_user_lock(user_id: int) -> asyncio.Lock:
             lock = _user_locks.get(uid)
             if lock and not lock.locked():
                 _user_locks.pop(uid, None)
-    if user_id not in _user_locks:
-        _user_locks[user_id] = asyncio.Lock()
     return _user_locks[user_id]
 
 

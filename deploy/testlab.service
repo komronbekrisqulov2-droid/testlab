@@ -1,0 +1,21 @@
+[Unit]
+Description=TestLab Telegram Bot & Mini App Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/testlab
+ExecStart=/var/www/testlab/venv/bin/python run.py
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=10
+EnvironmentFile=/var/www/testlab/.env
+
+# Loglarni alohida fayllarga yo'naltirish
+StandardOutput=append:/var/www/testlab/logs/systemd.log
+StandardError=append:/var/www/testlab/logs/systemd_err.log
+
+[Install]
+WantedBy=multi-user.target

@@ -183,6 +183,21 @@ async def _ensure_columns() -> None:
                     await connection.execute(text("ALTER TABLE attempts ADD COLUMN question_order VARCHAR(512)"))
                 if "effective_key" not in att_cols:
                     await connection.execute(text("ALTER TABLE attempts ADD COLUMN effective_key VARCHAR(256)"))
+
+            # users jadvalidagi profil va gamifikatsiya ustunlari
+            res_usr = await connection.execute(text("PRAGMA table_info(users)"))
+            usr_cols = {row[1] for row in res_usr.fetchall()}
+            if usr_cols:
+                if "phone" not in usr_cols:
+                    await connection.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(24)"))
+                if "is_registered" not in usr_cols:
+                    await connection.execute(text("ALTER TABLE users ADD COLUMN is_registered BOOLEAN DEFAULT 0"))
+                if "xp" not in usr_cols:
+                    await connection.execute(text("ALTER TABLE users ADD COLUMN xp INTEGER DEFAULT 0"))
+                if "streak_days" not in usr_cols:
+                    await connection.execute(text("ALTER TABLE users ADD COLUMN streak_days INTEGER DEFAULT 0"))
+                if "streak_updated_on" not in usr_cols:
+                    await connection.execute(text("ALTER TABLE users ADD COLUMN streak_updated_on DATETIME"))
         except Exception as err:
             log.debug("Ustunlarni tekshirishda xatolik: %s", err)
 

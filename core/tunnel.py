@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import atexit
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -33,7 +34,7 @@ class TunnelInfo(NamedTuple):
 _active_tunnel: TunnelInfo | None = None
 
 
-def get_cloudflared_path() -> Path:
+def get_cloudflared_path() -> Path | None:
     base = (
         Path(sys.prefix)
         / "Lib"
@@ -45,9 +46,15 @@ def get_cloudflared_path() -> Path:
         return base
     try:
         from pycloudflared.util import get_info
-        return Path(get_info().executable)
+        exe_path = Path(get_info().executable)
+        if exe_path.exists():
+            return exe_path
     except Exception:
-        return Path("cloudflared")
+        pass
+    which_path = shutil.which("cloudflared")
+    if which_path:
+        return Path(which_path)
+    return None
 
 
 def kill_orphan_cloudflared() -> None:
@@ -66,6 +73,13 @@ def kill_orphan_cloudflared() -> None:
                 stderr=subprocess.DEVNULL,
                 check=False,
             )
+        else:
+            subprocess.run(
+                ["pkill", "-f", "cloudflared"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
     except Exception as e:
         log.debug("Eski cloudflared tozalashda xato: %s", e)
 
@@ -77,7 +91,7 @@ def start_cloudflare_tunnel(port: int, wait_timeout: float = 15.0) -> str | None
     """
     global _active_tunnel
     exe = get_cloudflared_path()
-    if not exe.exists():
+    if exe is None or not exe.exists():
         log.warning("cloudflared topilmadi: %s", exe)
         return None
 

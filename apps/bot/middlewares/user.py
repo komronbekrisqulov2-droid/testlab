@@ -89,12 +89,12 @@ class UserMiddleware(BaseMiddleware):
 
         # --- Faollik vaqtini yangilash (Throttled: 15 daqiqada 1 marta) ---
         now = time.monotonic()
-        last_touched = _TOUCH_CACHE.get(telegram_user.id, 0.0)
+        last_touched = _TOUCH_CACHE.get(telegram_user.id)
         username_changed = (
             telegram_user.username is not None and telegram_user.username != user.username
         )
 
-        if is_new or username_changed or (now - last_touched >= _TOUCH_INTERVAL):
+        if is_new or username_changed or last_touched is None or (now - last_touched >= _TOUCH_INTERVAL):
             _TOUCH_CACHE[telegram_user.id] = now
             await users.touch(user, username=telegram_user.username)
 

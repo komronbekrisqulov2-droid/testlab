@@ -216,6 +216,21 @@ async def open_main_menu(
 ) -> None:
     """Bosh menyuga qaytish — mavjud xabarni tahrirlaydi."""
     await safe_answer(callback)
+
+    data = await state.get_data()
+    draft_id = data.get("draft_id")
+    if draft_id:
+        from modules.catalog.service import CatalogService
+
+        catalog = CatalogService(session)
+        draft = await catalog.tests.get(int(draft_id))
+        if draft is not None and draft.is_draft and draft.author_id == user.id:
+            try:
+                await catalog.delete(draft, user)
+                log.info("Bekor qilingan qoralama o'chirildi: №%s", draft.number)
+            except Exception as error:
+                log.warning("Qoralama o'chirilmadi: %s", error)
+
     await state.clear()
 
     stats = await AttemptRepository(session).user_stats(user.id)

@@ -1,0 +1,30 @@
+services:
+  testlab-bot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: testlab_bot
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    ports:
+      - "8088:8088"
+    volumes:
+      - ../data:/app/data
+      - ../logs:/app/logs
+      - ../exports:/app/exports
+      - ../assets:/app/assets
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: testlab_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:
