@@ -221,9 +221,17 @@ class DatabaseSettings(BaseSettings):
             return f"{prefix}{absolute.as_posix()}"
 
         if value.startswith("postgres://"):
-            return value.replace("postgres://", "postgresql+asyncpg://", 1)
-        if value.startswith("postgresql://") and "+asyncpg" not in value:
-            return value.replace("postgresql://", "postgresql+asyncpg://", 1)
+            value = value.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif value.startswith("postgresql://") and "+asyncpg" not in value:
+            value = value.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+        # Neon / Supabase query parametrlarini asyncpg uchun tozalash
+        if "postgresql+asyncpg://" in value:
+            import re
+            value = re.sub(r"[&?]channel_binding=[^&]*", "", value)
+            value = value.replace("sslmode=", "ssl=")
+            if "?" not in value and "&" in value:
+                value = value.replace("&", "?", 1)
 
         return value
 
@@ -242,6 +250,8 @@ class DatabaseSettings(BaseSettings):
             self.url
             .replace("+aiosqlite", "")
             .replace("+asyncpg", "+psycopg2")
+            .replace("?ssl=", "?sslmode=")
+            .replace("&ssl=", "&sslmode=")
         )
 
 
