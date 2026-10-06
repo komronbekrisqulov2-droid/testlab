@@ -209,6 +209,18 @@ class Attempt(Base, BigIntPK):
     def grade_meta(self) -> tuple[str, str, str]:
         return grade_for(self.percentage)
 
+    @property
+    def correct_answers(self) -> int:
+        return self.correct_count
+
+    @property
+    def wrong_answers(self) -> int:
+        return self.wrong_count
+
+    @property
+    def unanswered(self) -> int:
+        return self.skipped_count
+
 
 class StudentMistake(Base, BigIntPK):
     """
