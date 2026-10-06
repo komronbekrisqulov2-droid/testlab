@@ -97,6 +97,19 @@ async def handle_payload(
             await message.answer(uz.DEEP_LINK_NOT_FOUND, reply_markup=home_keyboard())
             return True
 
+        if test.author_id == user.id or user.is_admin:
+            from apps.bot.keyboards.inline import test_manage_keyboard
+            from modules.assessment.repository import AttemptRepository
+            catalog = CatalogService(session)
+            media_count = await catalog.media_count(test)
+            participants = await AttemptRepository(session).count_finished_by_test(test.id)
+            await state.clear()
+            await message.answer(
+                uz.test_manage(test, media_count, participants),
+                reply_markup=test_manage_keyboard(test),
+            )
+            return True
+
         await open_test(message, test, user, session, state)
         return True
 

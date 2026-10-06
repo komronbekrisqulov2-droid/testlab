@@ -252,6 +252,7 @@ class TestRepository(BaseRepository[Test]):
             Attempt.status.in_(
                 [AttemptStatus.FINISHED.value, AttemptStatus.EXPIRED.value]
             ),
+            or_(Attempt.is_practice == False, Attempt.is_practice.is_(None)),
         )
 
         total = await self.session.scalar(

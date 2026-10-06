@@ -327,6 +327,12 @@ class WebAppSettings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        import os
+        if "WEBAPP_PORT" not in os.environ and "PORT" in os.environ:
+            try:
+                self.port = int(os.environ["PORT"])
+            except ValueError:
+                pass
         dyn = load_dynamic_settings()
         if "WEBAPP_ENABLED" in dyn:
             self.enabled = bool(dyn["WEBAPP_ENABLED"])

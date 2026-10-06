@@ -81,13 +81,14 @@ async def main_test():
         student = await user_repo.get_by_telegram_id(555666777)
         catalog = CatalogService(session)
         test = (await catalog.tests.list_all()).items[0]
+        test.allow_practice = False
 
         # 1-marta topshirish (bot orqali yoki servis orqali)
         assessment = AssessmentService(session)
         await assessment.submit(test, student, "abcdabcd")
         await session.commit()
 
-    # Endi Web App orqali xuddi shu testga ikkinchi marta javob yuboramiz
+    # Endi Web App orqali xuddi shu testga ikkinchi marta javob yuboramiz (mashq o'chiq bo'lganda)
     from aiohttp.test_utils import TestClient, TestServer
     server = TestServer(app)
     client = TestClient(server)
@@ -110,6 +111,21 @@ async def main_test():
         assert data.get("already_answered") is True
         assert data.get("score") == 8
         print("✅ AlreadyAnsweredError 200 OK qaytardi va qulash bo'lmadi!")
+
+        # Mashq yoqilganda (standart) takroriy topshirish mashq sifatida o'tadi
+        async with session_factory() as session:
+            catalog = CatalogService(session)
+            t = await catalog.tests.get(test.id)
+            t.allow_practice = True
+            await session.commit()
+
+        resp_practice = await client.post(f"/api/test/{test.id}/submit", json=payload)
+        data_practice = await resp_practice.json()
+        assert resp_practice.status == 200
+        assert data_practice.get("ok") is True
+        assert data_practice.get("is_practice") is True
+        assert data_practice.get("attempt_number") == 2
+        print("✅ Mini App mashq rejimi muvaffaqiyatli topshirildi!")
 
         # Ota-onaga xabar yuborish tekshiruvi (yangi urinishda)
         # Boshqa yangi test yaratamiz va topshiramiz

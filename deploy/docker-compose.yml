@@ -16,8 +16,11 @@ services:
       - ../assets:/app/assets
     environment:
       - PYTHONUNBUFFERED=1
+      # Docker tarmog'ida PostgreSQL uchun quyidagi qatordan foydalaning:
+      # - DATABASE_URL=postgresql+asyncpg://testlab:testlab_secret@postgres:5432/testlab
     depends_on:
       - redis
+      - postgres
 
   redis:
     image: redis:7-alpine
@@ -26,5 +29,20 @@ services:
     volumes:
       - redis_data:/data
 
+  # PostgreSQL — ishlab chiqarish (production) ma'lumotlar bazasi
+  postgres:
+    image: postgres:16-alpine
+    container_name: testlab_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-testlab}
+      POSTGRES_USER: ${POSTGRES_USER:-testlab}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-testlab_secret}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
 volumes:
   redis_data:
+  postgres_data:

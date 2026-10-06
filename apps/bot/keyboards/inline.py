@@ -1080,11 +1080,23 @@ def explanations_list_keyboard(test_id: int, questions_count: int, explanations:
     return builder.as_markup()
 
 
-def single_explanation_keyboard(test_id: int, q_num: int) -> InlineKeyboardMarkup:
+def single_explanation_keyboard(
+    test_id: int,
+    q_num: int,
+    from_retake: bool = False,
+) -> InlineKeyboardMarkup:
     """Bitta savol yechimi ko'rilganda chiqadigan klaviatura."""
-    from apps.bot.keyboards.callbacks import ExplainCB
+    from apps.bot.keyboards.callbacks import ExplainCB, MistakeCB
 
     builder = InlineKeyboardBuilder()
+
+    if from_retake:
+        builder.row(
+            InlineKeyboardButton(
+                text="🔄 Xatolar ustida ishlashga qaytish",
+                callback_data=MistakeCB(action="retake", test_id=test_id, q_num=q_num).pack(),
+            )
+        )
 
     # Orqaga barcha yechimlar ro'yxatiga qaytish
     builder.row(

@@ -150,56 +150,82 @@ async def create_tables() -> None:
 
 async def _ensure_columns() -> None:
     """Mavjud jadvallarga yangi ustunlarni zarurat bo'lsa xavfsiz qo'shadi."""
-    if not settings.db.is_sqlite:
-        return
-
     async with engine.begin() as connection:
         try:
-            res = await connection.execute(text("PRAGMA table_info(tests)"))
-            cols = {row[1] for row in res.fetchall()}
-            if cols:
-                if "channel_id" not in cols:
-                    await connection.execute(text("ALTER TABLE tests ADD COLUMN channel_id BIGINT"))
-                if "channel_message_id" not in cols:
-                    await connection.execute(text("ALTER TABLE tests ADD COLUMN channel_message_id INTEGER"))
-                if "results_posted_at" not in cols:
-                    await connection.execute(text("ALTER TABLE tests ADD COLUMN results_posted_at DATETIME"))
-                if "is_randomized" not in cols:
-                    await connection.execute(text("ALTER TABLE tests ADD COLUMN is_randomized BOOLEAN DEFAULT 0"))
-                if "random_questions_count" not in cols:
-                    await connection.execute(text("ALTER TABLE tests ADD COLUMN random_questions_count INTEGER"))
-                if "classroom_id" not in cols:
-                    await connection.execute(text("ALTER TABLE tests ADD COLUMN classroom_id INTEGER"))
+            if settings.db.is_sqlite:
+                res = await connection.execute(text("PRAGMA table_info(tests)"))
+                cols = {row[1] for row in res.fetchall()}
+                if cols:
+                    if "channel_id" not in cols:
+                        await connection.execute(text("ALTER TABLE tests ADD COLUMN channel_id BIGINT"))
+                    if "channel_message_id" not in cols:
+                        await connection.execute(text("ALTER TABLE tests ADD COLUMN channel_message_id INTEGER"))
+                    if "results_posted_at" not in cols:
+                        await connection.execute(text("ALTER TABLE tests ADD COLUMN results_posted_at DATETIME"))
+                    if "is_randomized" not in cols:
+                        await connection.execute(text("ALTER TABLE tests ADD COLUMN is_randomized BOOLEAN DEFAULT 0"))
+                    if "random_questions_count" not in cols:
+                        await connection.execute(text("ALTER TABLE tests ADD COLUMN random_questions_count INTEGER"))
+                    if "classroom_id" not in cols:
+                        await connection.execute(text("ALTER TABLE tests ADD COLUMN classroom_id INTEGER"))
+                    if "allow_practice" not in cols:
+                        await connection.execute(text("ALTER TABLE tests ADD COLUMN allow_practice BOOLEAN DEFAULT 1"))
 
-            # attempts jadvalidagi anti-cheat va randomizatsiya ustunlari
-            res_att = await connection.execute(text("PRAGMA table_info(attempts)"))
-            att_cols = {row[1] for row in res_att.fetchall()}
-            if att_cols:
-                if "tab_switches_count" not in att_cols:
-                    await connection.execute(text("ALTER TABLE attempts ADD COLUMN tab_switches_count INTEGER DEFAULT 0"))
-                if "is_disqualified" not in att_cols:
-                    await connection.execute(text("ALTER TABLE attempts ADD COLUMN is_disqualified BOOLEAN DEFAULT 0"))
-                if "question_order" not in att_cols:
-                    await connection.execute(text("ALTER TABLE attempts ADD COLUMN question_order VARCHAR(512)"))
-                if "effective_key" not in att_cols:
-                    await connection.execute(text("ALTER TABLE attempts ADD COLUMN effective_key VARCHAR(256)"))
+                res_att = await connection.execute(text("PRAGMA table_info(attempts)"))
+                att_cols = {row[1] for row in res_att.fetchall()}
+                if att_cols:
+                    if "tab_switches_count" not in att_cols:
+                        await connection.execute(text("ALTER TABLE attempts ADD COLUMN tab_switches_count INTEGER DEFAULT 0"))
+                    if "is_disqualified" not in att_cols:
+                        await connection.execute(text("ALTER TABLE attempts ADD COLUMN is_disqualified BOOLEAN DEFAULT 0"))
+                    if "question_order" not in att_cols:
+                        await connection.execute(text("ALTER TABLE attempts ADD COLUMN question_order VARCHAR(512)"))
+                    if "effective_key" not in att_cols:
+                        await connection.execute(text("ALTER TABLE attempts ADD COLUMN effective_key VARCHAR(256)"))
+                    if "is_practice" not in att_cols:
+                        await connection.execute(text("ALTER TABLE attempts ADD COLUMN is_practice BOOLEAN DEFAULT 0"))
+                    if "attempt_number" not in att_cols:
+                        await connection.execute(text("ALTER TABLE attempts ADD COLUMN attempt_number INTEGER DEFAULT 1"))
 
-            # users jadvalidagi profil va gamifikatsiya ustunlari
-            res_usr = await connection.execute(text("PRAGMA table_info(users)"))
-            usr_cols = {row[1] for row in res_usr.fetchall()}
-            if usr_cols:
-                if "phone" not in usr_cols:
-                    await connection.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(24)"))
-                if "is_registered" not in usr_cols:
-                    await connection.execute(text("ALTER TABLE users ADD COLUMN is_registered BOOLEAN DEFAULT 0"))
-                if "xp" not in usr_cols:
-                    await connection.execute(text("ALTER TABLE users ADD COLUMN xp INTEGER DEFAULT 0"))
-                if "streak_days" not in usr_cols:
-                    await connection.execute(text("ALTER TABLE users ADD COLUMN streak_days INTEGER DEFAULT 0"))
-                if "streak_updated_on" not in usr_cols:
-                    await connection.execute(text("ALTER TABLE users ADD COLUMN streak_updated_on DATETIME"))
+                res_usr = await connection.execute(text("PRAGMA table_info(users)"))
+                usr_cols = {row[1] for row in res_usr.fetchall()}
+                if usr_cols:
+                    if "phone" not in usr_cols:
+                        await connection.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR(24)"))
+                    if "is_registered" not in usr_cols:
+                        await connection.execute(text("ALTER TABLE users ADD COLUMN is_registered BOOLEAN DEFAULT 0"))
+                    if "xp" not in usr_cols:
+                        await connection.execute(text("ALTER TABLE users ADD COLUMN xp INTEGER DEFAULT 0"))
+                    if "streak_days" not in usr_cols:
+                        await connection.execute(text("ALTER TABLE users ADD COLUMN streak_days INTEGER DEFAULT 0"))
+                    if "streak_updated_on" not in usr_cols:
+                        await connection.execute(text("ALTER TABLE users ADD COLUMN streak_updated_on DATETIME"))
+
+            elif settings.db.is_postgres:
+                # PostgreSQL 9.6+ supports ADD COLUMN IF NOT EXISTS natively
+                await connection.execute(text("ALTER TABLE tests ADD COLUMN IF NOT EXISTS channel_id BIGINT"))
+                await connection.execute(text("ALTER TABLE tests ADD COLUMN IF NOT EXISTS channel_message_id INTEGER"))
+                await connection.execute(text("ALTER TABLE tests ADD COLUMN IF NOT EXISTS results_posted_at TIMESTAMP WITHOUT TIME ZONE"))
+                await connection.execute(text("ALTER TABLE tests ADD COLUMN IF NOT EXISTS is_randomized BOOLEAN DEFAULT FALSE"))
+                await connection.execute(text("ALTER TABLE tests ADD COLUMN IF NOT EXISTS random_questions_count INTEGER"))
+                await connection.execute(text("ALTER TABLE tests ADD COLUMN IF NOT EXISTS classroom_id INTEGER"))
+                await connection.execute(text("ALTER TABLE tests ADD COLUMN IF NOT EXISTS allow_practice BOOLEAN DEFAULT TRUE"))
+
+                await connection.execute(text("ALTER TABLE attempts ADD COLUMN IF NOT EXISTS tab_switches_count INTEGER DEFAULT 0"))
+                await connection.execute(text("ALTER TABLE attempts ADD COLUMN IF NOT EXISTS is_disqualified BOOLEAN DEFAULT FALSE"))
+                await connection.execute(text("ALTER TABLE attempts ADD COLUMN IF NOT EXISTS question_order VARCHAR(512)"))
+                await connection.execute(text("ALTER TABLE attempts ADD COLUMN IF NOT EXISTS effective_key VARCHAR(256)"))
+                await connection.execute(text("ALTER TABLE attempts ADD COLUMN IF NOT EXISTS is_practice BOOLEAN DEFAULT FALSE"))
+                await connection.execute(text("ALTER TABLE attempts ADD COLUMN IF NOT EXISTS attempt_number INTEGER DEFAULT 1"))
+
+                await connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(24)"))
+                await connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_registered BOOLEAN DEFAULT FALSE"))
+                await connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS xp INTEGER DEFAULT 0"))
+                await connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_days INTEGER DEFAULT 0"))
+                await connection.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS streak_updated_on TIMESTAMP WITHOUT TIME ZONE"))
+
         except Exception as err:
-            log.debug("Ustunlarni tekshirishda xatolik: %s", err)
+            log.debug("Ustunlarni tekshirishda ogohlantirish: %s", err)
 
 
 async def init_database() -> None:

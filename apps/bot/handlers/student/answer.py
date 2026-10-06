@@ -118,7 +118,8 @@ async def open_test(
     await state.set_state(Answering.waiting)
     await state.update_data(test_id=test.id)
 
-    card_text = uz.test_card(test, len(media), attempt=attempt)
+    used = await assessment.attempts.count_by_user_and_test(user.id, test.id)
+    card_text = uz.test_card(test, len(media), attempt=attempt, is_practice=(used > 0))
 
     await message.answer(
         card_text,
@@ -229,6 +230,19 @@ async def bare_number(
         await message.answer(uz.TEST_NOT_FOUND, reply_markup=home_keyboard())
         return
 
+    # Agar foydalanuvchi ushbu test muallifi yoki admin bo'lsa:
+    if test.author_id == user.id or user.is_admin:
+        from apps.bot.keyboards.inline import test_manage_keyboard
+        from modules.assessment.repository import AttemptRepository
+        media_count = await catalog.media_count(test)
+        participants = await AttemptRepository(session).count_finished_by_test(test.id)
+        await state.clear()
+        await message.answer(
+            uz.test_manage(test, media_count, participants),
+            reply_markup=test_manage_keyboard(test),
+        )
+        return
+
     await open_test(message, test, user, session, state)
 
 
@@ -290,8 +304,9 @@ async def one_shot(
 
     await state.clear()
     await show_result(message, submit, session, user)
-    await notify_author(message, submit, user, session)
-    await notify_parents(message, submit, user, session)
+    if not getattr(submit.attempt, "is_practice", False):
+        await notify_author(message, submit, user, session)
+        await notify_parents(message, submit, user, session)
 
 
 
@@ -466,8 +481,9 @@ async def receive_answers(
 
     await state.clear()
     await show_result(message, submit, session, user)
-    await notify_author(message, submit, user, session)
-    await notify_parents(message, submit, user, session)
+    if not getattr(submit.attempt, "is_practice", False):
+        await notify_author(message, submit, user, session)
+        await notify_parents(message, submit, user, session)
 
 
 @router.message(F.web_app_data)
@@ -511,8 +527,9 @@ async def receive_webapp_answers(
 
     await state.clear()
     await show_result(message, submit, session, user)
-    await notify_author(message, submit, user, session)
-    await notify_parents(message, submit, user, session)
+    if not getattr(submit.attempt, "is_practice", False):
+        await notify_author(message, submit, user, session)
+        await notify_parents(message, submit, user, session)
 
 
 

@@ -42,22 +42,25 @@ if [ ! -f ".env" ]; then
     echo "   nano $APP_DIR/.env"
 fi
 
-# 6. Systemd xizmatini o'rnatish
+# 6. Ma'lumotlar bazasi migratsiyalarini qo'llash
+echo "🗄  Ma'lumotlar bazasi sxemasi yangilanmoqda (Alembic)..."
+./venv/bin/python -m alembic upgrade head || true
+
+# 7. Systemd xizmatini o'rnatish
 SERVICE_SRC="$APP_DIR/deploy/testlab.service"
 SERVICE_DEST="/etc/systemd/system/testlab.service"
 
 if [ -f "$SERVICE_SRC" ]; then
     echo "⚙️  Systemd xizmati sozlanmoqda..."
-    # Foydalanuvchi va katalog yo'llarini joriy tizimga moslash
     CURRENT_USER="$(whoami)"
-    sudo sed -i "s|WorkingDirectory=.*|WorkingDirectory=$APP_DIR|g" "$SERVICE_SRC"
-    sudo sed -i "s|ExecStart=.*|ExecStart=$APP_DIR/venv/bin/python run.py|g" "$SERVICE_SRC"
-    sudo sed -i "s|EnvironmentFile=.*|EnvironmentFile=$APP_DIR/.env|g" "$SERVICE_SRC"
-    sudo sed -i "s|StandardOutput=.*|StandardOutput=append:$APP_DIR/logs/systemd.log|g" "$SERVICE_SRC"
-    sudo sed -i "s|StandardError=.*|StandardError=append:$APP_DIR/logs/systemd_err.log|g" "$SERVICE_SRC"
-    sudo sed -i "s|User=.*|User=$CURRENT_USER|g" "$SERVICE_SRC"
-
     sudo cp "$SERVICE_SRC" "$SERVICE_DEST"
+    sudo sed -i "s|WorkingDirectory=.*|WorkingDirectory=$APP_DIR|g" "$SERVICE_DEST"
+    sudo sed -i "s|ExecStart=.*|ExecStart=$APP_DIR/venv/bin/python run.py|g" "$SERVICE_DEST"
+    sudo sed -i "s|EnvironmentFile=.*|EnvironmentFile=$APP_DIR/.env|g" "$SERVICE_DEST"
+    sudo sed -i "s|StandardOutput=.*|StandardOutput=append:$APP_DIR/logs/systemd.log|g" "$SERVICE_DEST"
+    sudo sed -i "s|StandardError=.*|StandardError=append:$APP_DIR/logs/systemd_err.log|g" "$SERVICE_DEST"
+    sudo sed -i "s|User=.*|User=$CURRENT_USER|g" "$SERVICE_DEST"
+
     sudo systemctl daemon-reload
     sudo systemctl enable testlab.service
     echo "✅ Xizmat yoqildi: systemctl start testlab"

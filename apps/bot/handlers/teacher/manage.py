@@ -22,7 +22,6 @@ from apps.bot.keyboards.inline import (
     confirm_delete_keyboard,
     home_button,
     my_tests_keyboard,
-    participants_keyboard,
     test_edit_keyboard,
     test_manage_keyboard,
     test_random_keyboard,
@@ -303,6 +302,15 @@ async def toggle_random(
         return
 
     test.is_randomized = not test.is_randomized
+    # Urinishlardagi rejim ziddiyatini oldini olish uchun IN_PROGRESS urinishlarni tozalaymiz
+    from modules.assessment.models import Attempt, AttemptStatus
+    from sqlalchemy import delete
+    await session.execute(
+        delete(Attempt).where(
+            Attempt.test_id == test.id,
+            Attempt.status == AttemptStatus.IN_PROGRESS.value,
+        )
+    )
     await session.commit()
     msg = "🟢 Randomizatsiya yoqildi!" if test.is_randomized else "🔴 Randomizatsiya o'chirildi."
     await safe_answer(callback, msg)
@@ -324,6 +332,14 @@ async def set_random_all(
 
     test.random_questions_count = None
     test.is_randomized = True
+    from modules.assessment.models import Attempt, AttemptStatus
+    from sqlalchemy import delete
+    await session.execute(
+        delete(Attempt).where(
+            Attempt.test_id == test.id,
+            Attempt.status == AttemptStatus.IN_PROGRESS.value,
+        )
+    )
     await session.commit()
     await safe_answer(callback, "♾ Endi barcha savollar aralashtiriladi!")
     await open_random_menu(callback, callback_data, user, session)

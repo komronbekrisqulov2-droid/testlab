@@ -212,6 +212,10 @@ class Test(Base, IntPK, TimestampMixin):
     certificate_enabled: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="1", nullable=False
     )
+    allow_practice: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="1", nullable=False,
+        doc="O'quvchi 1-rasmiy urinishdan so'ng cheksiz mashq qilib yechishi mumkinmi",
+    )
 
     # --- Randomizatsiya (Ko'chirishga qarshi) ---
     is_randomized: Mapped[bool] = mapped_column(

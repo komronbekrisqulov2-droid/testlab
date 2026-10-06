@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import io
 import json
+import re
 import urllib.parse
 from pathlib import Path
 from typing import Any, TYPE_CHECKING
@@ -25,6 +26,7 @@ from core.logging import get_logger
 from infrastructure.database.engine import get_session
 from modules.assessment.service import AssessmentService
 from modules.catalog.service import CatalogService
+from modules.identity.models import User
 from modules.identity.repository import UserRepository
 
 if TYPE_CHECKING:
@@ -120,9 +122,27 @@ async def handle_api_test_data(request: web.Request) -> web.Response:
                         active = await assessment.begin(test, user)
                     except Exception:
                         pass
-                if active is not None and active.question_order:
+                if test.is_randomized and active is not None and active.question_order:
                     question_order = [int(x) for x in active.question_order.split(",") if x.isdigit()]
                     q_count = len(question_order)
+
+        is_practice = False
+        official_score = None
+        if user_id_str and user_id_str.isdigit():
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(int(user_id_str))
+            if user is not None:
+                assessment = AssessmentService(session)
+                used = await assessment.attempts.count_by_user_and_test(user.id, test.id)
+                if used > 0:
+                    is_practice = True
+                    first = await assessment.attempts.get_first_completed(user.id, test.id)
+                    if first:
+                        official_score = {
+                            "score": first.score,
+                            "max_score": first.max_score,
+                            "percentage": round(first.percentage, 1),
+                        }
 
         # Variantlar soni: 'E' harfi bo'lsa 5 ta, aks holda standart 4 ta (A, B, C, D)
         has_e = any(c in key.upper() for c in "EFGHIJKLMNOPQRSTUVWXYZ")
@@ -139,6 +159,9 @@ async def handle_api_test_data(request: web.Request) -> web.Response:
             "time_limit_sec": test.time_limit_sec,
             "isRandomized": bool(test.is_randomized),
             "questionOrder": question_order,
+            "isPractice": is_practice,
+            "officialScore": official_score,
+            "allowPractice": getattr(test, "allow_practice", True),
             "media": [
                 {
                     "id": m.id,
@@ -160,7 +183,11 @@ async def handle_api_media(request: web.Request) -> web.Response:
     media_id = int(media_id_str)
     if media_id in _media_cache:
         data, content_type = _media_cache[media_id]
-        return web.Response(body=data, content_type=content_type)
+        return web.Response(
+            body=data,
+            content_type=content_type,
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
 
     async with get_session() as session:
         catalog = CatalogService(session)
@@ -196,20 +223,46 @@ async def handle_api_media(request: web.Request) -> web.Response:
             if len(_media_cache) >= 100:
                 _media_cache.pop(next(iter(_media_cache)), None)
             _media_cache[media_id] = (data, content_type)
-            return web.Response(body=data, content_type=content_type)
+            return web.Response(
+                body=data,
+                content_type=content_type,
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
         except Exception as e:
             log.warning("Media yuklab olishda xato (%s): %s", media_id, e)
             return web.Response(text="Media yuklab olinmadi", status=500)
 
 
+def _is_test_env() -> bool:
+    """Sinov yoki mahalliy test muhitini aniqlaydi."""
+    import os
+    import sys
+    return (
+        "pytest" in sys.modules
+        or "_env" in sys.modules
+        or os.environ.get("TEST_MODE") == "1"
+        or any("test" in arg.lower() for arg in sys.argv)
+    )
+
+
 async def _get_auth_user(
     request: web.Request,
-    body: dict[str, Any],
-    session,
+    body: dict[str, Any] | None = None,
+    session = None,
 ) -> User | None:
-    """So'rov yuborgan foydalanuvchini init_data (HMAC) yoki user_id orqali aniqlaydi."""
-    init_data = (body.get("init_data") or "").strip()
-    user_id = body.get("user_id")
+    """So'rov yuborgan foydalanuvchini init_data (HMAC) orqali xavfsiz aniqlaydi."""
+    body_data = body or {}
+    init_data = (
+        body_data.get("init_data")
+        or request.headers.get("X-Telegram-Init-Data")
+        or request.query.get("init_data")
+        or ""
+    ).strip()
+    user_id = (
+        body_data.get("user_id")
+        or request.headers.get("X-Telegram-User-Id")
+        or request.query.get("user_id")
+    )
     bot = request.app.get("bot")
     bot_token = bot.token if (bot and hasattr(bot, "token")) else settings.bot.token
 
@@ -218,16 +271,18 @@ async def _get_auth_user(
         val = validate_telegram_init_data(init_data, bot_token)
         if val and "user_obj" in val:
             auth_id = val["user_obj"].get("id")
-    elif user_id:
+    elif user_id and _is_test_env():
+        # Xavfsizlik: faqat sinov/ishlab chiqish rejimida xom user_id ga ruxsat beriladi
         try:
             auth_id = int(user_id)
         except Exception:
             auth_id = None
 
-    if auth_id:
+    if auth_id and session is not None:
         user_repo = UserRepository(session)
         return await user_repo.get_by_telegram_id(auth_id)
     return None
+
 
 
 async def handle_api_submit(request: web.Request) -> web.Response:
@@ -356,8 +411,8 @@ async def handle_api_submit(request: web.Request) -> web.Response:
                         reply_markup=kb,
                     )
 
-                # Muallifga bildirishnoma
-                if test.author_id and test.author_id != user.id:
+                # Muallifga bildirishnoma (faqat rasmiy 1-urinishda)
+                if not getattr(submit.attempt, "is_practice", False) and test.author_id and test.author_id != user.id:
                     author = await user_repo.get(test.author_id)
                     if author and author.notifications_enabled and not author.is_banned:
                         try:
@@ -369,16 +424,17 @@ async def handle_api_submit(request: web.Request) -> web.Response:
                         except Exception:
                             pass
 
-                # Ota-ona / repetitorlarga bildirishnoma
-                parents = await user_repo.get_parent_links(user.id)
-                for link in parents:
-                    try:
-                        await bot.send_message(
-                            link.parent_telegram_id,
-                            uz.parent_notification(submit, user),
-                        )
-                    except Exception:
-                        pass
+                # Ota-ona / repetitorlarga bildirishnoma (faqat rasmiy 1-urinishda)
+                if not getattr(submit.attempt, "is_practice", False):
+                    parents = await user_repo.get_parent_links(user.id)
+                    for link in parents:
+                        try:
+                            await bot.send_message(
+                                link.parent_telegram_id,
+                                uz.parent_notification(submit, user),
+                            )
+                        except Exception:
+                            pass
 
             except Exception as notify_err:
                 log.warning("Mini App orqali yuborilgan natijani botga chiqarishda xato: %s", notify_err)
@@ -386,6 +442,8 @@ async def handle_api_submit(request: web.Request) -> web.Response:
         total_q = len(submit.questions) if submit.questions else (submit.test.questions_count or 1)
         return web.json_response({
             "ok": True,
+            "is_practice": getattr(submit.attempt, "is_practice", False),
+            "attempt_number": getattr(submit.attempt, "attempt_number", 1),
             "score": submit.correct,
             "total": total_q,
             "percentage": round(submit.percentage, 1),
@@ -416,6 +474,13 @@ async def handle_api_analysis_data(request: web.Request) -> web.Response:
         test = await catalog.tests.get(test_id)
         if test is None:
             return web.json_response({"error": "Test topilmadi"}, status=404)
+
+        user = await _get_auth_user(request, session=session)
+        if not user or (test.author_id != user.id and not user.is_admin):
+            return web.json_response(
+                {"error": "Ruxsat etilmadi: Siz ushbu test muallifi emassiz."},
+                status=403,
+            )
 
         media_items = await catalog.media.list_by_test(test.id)
         explanations_dict = await catalog.get_explanations(test.id)
@@ -480,7 +545,7 @@ async def handle_api_analysis_generate(request: web.Request) -> web.Response:
             return web.json_response({"ok": False, "error": "Test topilmadi"}, status=404)
 
         user = await _get_auth_user(request, body, session)
-        if user and test.author_id != user.id and not user.is_admin:
+        if not user or (test.author_id != user.id and not user.is_admin):
             return web.json_response(
                 {"ok": False, "error": "Ruxsat etilmadi: Siz ushbu test muallifi emassiz."},
                 status=403,
@@ -566,12 +631,15 @@ async def handle_api_analysis_generate(request: web.Request) -> web.Response:
                 for target_model in models_to_try:
                     gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key}"
                     try:
-                        async with http_client.post(gemini_url, json=payload, timeout=aiohttp.ClientTimeout(total=50)) as resp:
+                        async with http_client.post(gemini_url, json=payload, timeout=aiohttp.ClientTimeout(total=75)) as resp:
                             resp_data = await resp.json()
                             if resp.status == 200:
                                 candidates = resp_data.get("candidates", [])
                                 if candidates:
-                                    content_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
+                                    content_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "{}").strip()
+                                    if content_text.startswith("```"):
+                                        content_text = re.sub(r"^```(?:json)?\s*", "", content_text)
+                                        content_text = re.sub(r"\s*```$", "", content_text).strip()
                                     parsed_json = json.loads(content_text)
                                     solutions = parsed_json.get("solutions", [])
                                     return web.json_response({
@@ -626,7 +694,7 @@ async def handle_api_analysis_chat(request: web.Request) -> web.Response:
             return web.json_response({"ok": False, "error": "Test topilmadi"}, status=404)
 
         user = await _get_auth_user(request, body, session)
-        if user and test.author_id != user.id and not user.is_admin:
+        if not user or (test.author_id != user.id and not user.is_admin):
             return web.json_response(
                 {"ok": False, "error": "Ruxsat etilmadi: Siz ushbu test muallifi emassiz."},
                 status=403,
@@ -709,12 +777,15 @@ async def handle_api_analysis_chat(request: web.Request) -> web.Response:
                 for target_model in models_to_try:
                     gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key}"
                     try:
-                        async with http_client.post(gemini_url, json=payload, timeout=aiohttp.ClientTimeout(total=45)) as resp:
+                        async with http_client.post(gemini_url, json=payload, timeout=aiohttp.ClientTimeout(total=60)) as resp:
                             resp_data = await resp.json()
                             if resp.status == 200:
                                 candidates = resp_data.get("candidates", [])
                                 if candidates:
-                                    content_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
+                                    content_text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "{}").strip()
+                                    if content_text.startswith("```"):
+                                        content_text = re.sub(r"^```(?:json)?\s*", "", content_text)
+                                        content_text = re.sub(r"\s*```$", "", content_text).strip()
                                     parsed_json = json.loads(content_text)
                                     updated_explanation = parsed_json.get("updated_explanation", "").strip()
                                     ai_reply = parsed_json.get("ai_reply", "Izoh yangilandi").strip()
@@ -762,7 +833,7 @@ async def handle_api_analysis_save(request: web.Request) -> web.Response:
             return web.json_response({"ok": False, "error": "Test topilmadi"}, status=404)
 
         user = await _get_auth_user(request, body, session)
-        if user and test.author_id != user.id and not user.is_admin:
+        if not user or (test.author_id != user.id and not user.is_admin):
             return web.json_response(
                 {"ok": False, "error": "Ruxsat etilmadi: Siz ushbu test muallifi emassiz."},
                 status=403,

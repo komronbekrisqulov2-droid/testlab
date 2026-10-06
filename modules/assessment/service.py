@@ -147,7 +147,7 @@ class AssessmentService:
         if not test.answer_key:
             raise TestNotAvailableError("Bu testda javoblar kaliti yo'q.")
 
-        if test.max_attempts > 0:
+        if not getattr(test, "allow_practice", True) and test.max_attempts > 0:
             used = await self.attempts.count_by_user_and_test(user.id, test.id)
             if used >= test.max_attempts:
                 raise AlreadyAnsweredError(
@@ -200,6 +200,16 @@ class AssessmentService:
         if active is not None:
             if active.is_expired:
                 await self.expire(active)
+            elif not test.is_randomized and active.question_order:
+                # Test endi random emas, eski aralashtirilgan urinishni tozalaymiz
+                await self.session.delete(active)
+                await self.session.commit()
+                active = None
+            elif test.is_randomized and not active.question_order:
+                # Test endi random qilindi, eski aralashmagan urinishni tozalaymiz
+                await self.session.delete(active)
+                await self.session.commit()
+                active = None
             else:
                 return active
 
@@ -226,6 +236,10 @@ class AssessmentService:
             effective_key = "".join(test.key_letters[i - 1] for i in order)
             max_score = len(order)
 
+        used = await self.attempts.count_by_user_and_test(user.id, test.id)
+        is_practice = (used > 0)
+        attempt_number = used + 1
+
         return await self.attempts.create(
             test_id=test.id,
             user_id=user.id,
@@ -235,6 +249,8 @@ class AssessmentService:
             max_score=max_score,
             question_order=question_order_str,
             effective_key=effective_key,
+            is_practice=is_practice,
+            attempt_number=attempt_number,
         )
 
     async def expire(self, attempt: Attempt) -> Attempt:
@@ -325,7 +341,7 @@ class AssessmentService:
             )
 
         # Random test bo'lsa, aynan shu urinishga biriktirilgan aralashtirilgan kalitni olamiz
-        if active is not None and active.effective_key:
+        if test.is_randomized and active is not None and active.effective_key:
             key = active.effective_key
         elif test.is_randomized:
             active = await self.begin(test, user)
@@ -353,7 +369,7 @@ class AssessmentService:
                 hint="Javoblarni test raqamisiz yuboring yoki to'g'ri raqamni yozing.",
             )
 
-        order_map = [int(x) for x in active.question_order.split(",") if x.isdigit()] if (active and active.question_order) else None
+        order_map = [int(x) for x in active.question_order.split(",") if x.isdigit()] if (test.is_randomized and active and active.question_order) else None
         results, correct, wrong, skipped = self._grade(key, parsed.letters, order_map=order_map)
 
         max_score = expected or 1
@@ -375,6 +391,14 @@ class AssessmentService:
             passed = percentage >= test.pass_score
             status = AttemptStatus.FINISHED.value
 
+        used = await self.attempts.count_by_user_and_test(user.id, test.id)
+        if active is not None and getattr(active, "is_practice", False):
+            is_practice = True
+            attempt_number = getattr(active, "attempt_number", used + 1)
+        else:
+            is_practice = (used > 0)
+            attempt_number = used + 1
+
         now = utcnow()
         result_fields = dict(
             status=status,
@@ -390,6 +414,8 @@ class AssessmentService:
             skipped_count=final_skipped,
             tab_switches_count=tab_switches_count,
             is_disqualified=is_disqualified,
+            is_practice=is_practice,
+            attempt_number=attempt_number,
         )
 
         if active is not None:
@@ -442,8 +468,13 @@ class AssessmentService:
                         )
                         self.session.add(mistake)
 
-            streak, streak_grew = await self.users.touch_streak(user)
-            xp = await self._award_xp(user, attempt, streak_grew=streak_grew)
+            if not is_practice:
+                streak, streak_grew = await self.users.touch_streak(user)
+                xp = await self._award_xp(user, attempt, streak_grew=streak_grew)
+            else:
+                streak = getattr(user, "streak_days", 0)
+                streak_grew = False
+                xp = 0
         else:
             streak = getattr(user, "streak_days", 0)
             streak_grew = False

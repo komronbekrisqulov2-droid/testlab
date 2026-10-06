@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import re
 from typing import TYPE_CHECKING, Any
@@ -180,7 +181,9 @@ async def _get_photo_media(
             await message.bot.download_file(file_info.file_path, destination=dest)
             raw_bytes = dest.getvalue()
             if raw_bytes:
-                wm_bytes = apply_student_watermark(raw_bytes, user.full_name, user.telegram_id)
+                wm_bytes = await asyncio.to_thread(
+                    apply_student_watermark, raw_bytes, user.full_name, user.telegram_id
+                )
                 if len(_WATERMARK_CACHE) > 100:
                     _WATERMARK_CACHE.pop(next(iter(_WATERMARK_CACHE)))
                 _WATERMARK_CACHE[cache_key] = wm_bytes

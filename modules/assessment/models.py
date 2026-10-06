@@ -160,6 +160,18 @@ class Attempt(Base, BigIntPK):
     )
 
     # ------------------------------------------------------------------
+    #  Mashq rejimi (Practice Mode)
+    # ------------------------------------------------------------------
+    is_practice: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False, index=True,
+        doc="1-yechim rasmiy (False), keyingilari mashq (True)",
+    )
+    attempt_number: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False,
+        doc="Urinish tartib raqami (1, 2, ...)",
+    )
+
+    # ------------------------------------------------------------------
     #  Bog'lanishlar
     # ------------------------------------------------------------------
     test: Mapped["Test"] = relationship(back_populates="attempts", lazy="selectin")

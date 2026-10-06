@@ -286,7 +286,7 @@ def format_question_order(orders: list[int]) -> str:
     return "\n".join(lines)
 
 
-def test_card(test: Test, media_count: int, attempt=None) -> str:
+def test_card(test: Test, media_count: int, attempt=None, *, is_practice: bool = False) -> str:
     """
     Test kartochkasi — rasmlardan KEYIN yuboriladi.
 
@@ -295,10 +295,10 @@ def test_card(test: Test, media_count: int, attempt=None) -> str:
     xabar. U tugma bosilganda joyida o'zgaradi.
     """
     orders = None
-    if attempt and getattr(attempt, "question_order", None):
+    if test.is_randomized and attempt and getattr(attempt, "question_order", None):
         orders = [int(x) for x in attempt.question_order.split(",") if x.isdigit()]
 
-    if orders:
+    if test.is_randomized and orders:
         total_q = test.questions_count
         assigned_q = len(orders)
         if assigned_q < total_q:
@@ -308,15 +308,30 @@ def test_card(test: Test, media_count: int, attempt=None) -> str:
     else:
         count_str = f"<b>{test.questions_count} ta</b>"
 
+    practice_banner = ""
+    if is_practice or (attempt and getattr(attempt, "is_practice", False)):
+        practice_banner = (
+            "🏋️ <b>MASHQ REJIMI</b>\n"
+            "ℹ️ <i>Siz ushbu testni topshirgansiz. 1-yechmingiz rasmiy natija hisoblanadi. "
+            "Hozirgi yechim esa bilimingizni mustahkamlash uchun mashq hisoblanadi.</i>\n\n"
+        )
+
+    attempts_label = (
+        "1-urinish rasmiy (qayta yechish cheksiz)"
+        if getattr(test, "allow_practice", True)
+        else ("cheksiz" if test.max_attempts == 0 else test.max_attempts)
+    )
+
     text = (
-        f"📝 <b>{escape(test.title)}</b>\n"
+        practice_banner
+        + f"📝 <b>{escape(test.title)}</b>\n"
         f"{LINE}\n\n"
         f"🔑 Test kodi: <b>{test.number}</b>\n"
         f"📊 Savollar soni: {count_str}\n"
         + (f"🖼 Rasmlar: <b>{media_count} ta</b>\n" if media_count else "")
         + f"👤 Test yaratuvchisi: {escape(test.author_name)}\n"
         f"🎯 O'tish balli: <b>{test.pass_score}%</b>\n"
-        f"❗️ Urinishlar: <b>{'cheksiz' if test.max_attempts == 0 else test.max_attempts}</b>\n"
+        f"❗️ Urinishlar: <b>{attempts_label}</b>\n"
         + (
             f"⏳ Vaqt: <b>{fmt_duration(test.time_limit_sec)}</b> "
             f"<i>(hozir boshlandi)</i>\n"
@@ -324,7 +339,7 @@ def test_card(test: Test, media_count: int, attempt=None) -> str:
         )
     )
 
-    if orders:
+    if test.is_randomized and orders:
         text += (
             f"\n🎲 <b>RANDOM REJIM (Ko'chirishga qarshi):</b>\n"
             f"📋 <b>Sizga tushgan savollar tartibi ({len(orders)} ta):</b>\n"
@@ -352,10 +367,10 @@ def ask_answers(test: Test, attempt=None) -> str:
     nechta harf yozish kerakligini ko'rib turadi.
     """
     orders = None
-    if attempt and getattr(attempt, "question_order", None):
+    if test.is_randomized and attempt and getattr(attempt, "question_order", None):
         orders = [int(x) for x in attempt.question_order.split(",") if x.isdigit()]
 
-    count = len(orders) if orders else test.questions_count
+    count = len(orders) if (test.is_randomized and orders) else test.questions_count
     example = "".join("abcd"[index % 4] for index in range(min(count, 8)))
     tail = "…" if count > 8 else ""
 
@@ -364,10 +379,10 @@ def ask_answers(test: Test, attempt=None) -> str:
         f"{LINE}\n\n"
         f"📝 <b>{escape(test.title)}</b>\n"
         f"📊 Savollar: <b>{count} ta</b>"
-        + (" <i>(🎲 Random tartibda)</i>\n\n" if orders else "\n\n")
+        + (" <i>(🎲 Random tartibda)</i>\n\n" if (test.is_randomized and orders) else "\n\n")
     )
 
-    if orders:
+    if test.is_randomized and orders:
         text += (
             f"📋 <b>Sizga tushgan savollar tartibi:</b>\n"
             f"{format_question_order(orders)}\n\n"
@@ -442,6 +457,16 @@ def result(submit, *, hide_keys: bool = False) -> str:
         )
 
     attempt = getattr(submit, "attempt", None)
+    is_practice = getattr(attempt, "is_practice", False) if attempt else False
+    attempt_num = getattr(attempt, "attempt_number", 1) if attempt else 1
+
+    practice_banner = ""
+    if is_practice:
+        practice_banner = (
+            f"🏋️ <b>MASHQ NATIJASI ({attempt_num}-urinish)</b>\n"
+            f"ℹ️ <i>Sizning 1-natijangiz rasmiy hisoblanadi. Bu mashq natijasi umumiy reytingga ta'sir qilmaydi.</i>\n\n"
+        )
+
     orders = None
     if attempt and getattr(attempt, "question_order", None):
         orders = [int(x) for x in attempt.question_order.split(",") if x.isdigit()]
@@ -453,7 +478,7 @@ def result(submit, *, hide_keys: bool = False) -> str:
     )
 
     lines = [
-        f"📌 Test kodi: <b>{test.number}</b>",
+        practice_banner + f"📌 Test kodi: <b>{test.number}</b>",
         f"📝 Savollar soni: {q_count_str}",
         f"👤 Test yaratuvchisi: {escape(test.author_name)}",
         "",
@@ -528,12 +553,15 @@ def result(submit, *, hide_keys: bool = False) -> str:
     lines.append(f"🏅 Baho: <b>{submit.grade}</b>")
 
     if submit.participants:
-        lines.append(
-            f"🏆 Reyting: <b>{submit.rank}-o'rin</b> ({submit.participants} ta)"
-        )
+        rank_label = f"🏆 Reyting: <b>{submit.rank}-o'rin</b> ({submit.participants} ta)"
+        if is_practice:
+            rank_label += " <i>(Rasmiy natija)</i>"
+        lines.append(rank_label)
 
     if submit.xp_earned:
         lines.append(f"⚡️ +{submit.xp_earned} XP")
+    elif is_practice:
+        lines.append("✨ <i>Mashq yakunlandi!</i>")
 
     #  Seriya faqat o'sgan kunda ko'rsatiladi: har bir testda takrorlansa
     #  e'tibordan qolib, kunning yutug'i bo'lmay qoladi

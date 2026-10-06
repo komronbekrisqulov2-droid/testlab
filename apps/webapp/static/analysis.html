@@ -815,7 +815,19 @@
 
     async function loadTest() {
       try {
-        const res = await fetch(`/api/analysis/${testId}`);
+        const initData = tg?.initData || "";
+        const userId = tg?.initDataUnsafe?.user?.id || "";
+        const qParams = new URLSearchParams();
+        if (initData) qParams.set("init_data", initData);
+        if (userId) qParams.set("user_id", userId);
+        const url = `/api/analysis/${testId}${qParams.toString() ? '?' + qParams.toString() : ''}`;
+
+        const res = await fetch(url, {
+          headers: {
+            "X-Telegram-Init-Data": initData,
+            "X-Telegram-User-Id": String(userId)
+          }
+        });
         const data = await res.json();
         if (data.error) {
           showToast(data.error, true);
@@ -996,14 +1008,21 @@
       const curExp = (ta ? ta.value : (currentSolutions[qNum]?.explanation || "")).trim();
 
       try {
+        const initData = tg?.initData || "";
+        const userId = tg?.initDataUnsafe?.user?.id || null;
         const res = await fetch(`/api/analysis/${testId}/chat`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Telegram-Init-Data": initData
+          },
           body: JSON.stringify({
             questionNumber: Number(qNum),
             currentExplanation: curExp,
             message: message,
-            apiKey: customKey
+            apiKey: customKey,
+            init_data: initData,
+            user_id: userId
           })
         });
 
@@ -1083,10 +1102,19 @@
       document.getElementById("statusText").innerText = "✨ AI yechimlarni yozmoqda...";
 
       try {
+        const initData = tg?.initData || "";
+        const userId = tg?.initDataUnsafe?.user?.id || null;
         const res = await fetch(`/api/analysis/${testId}/generate`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ apiKey: customKey })
+          headers: {
+            "Content-Type": "application/json",
+            "X-Telegram-Init-Data": initData
+          },
+          body: JSON.stringify({
+            apiKey: customKey,
+            init_data: initData,
+            user_id: userId
+          })
         });
         const data = await res.json();
 
@@ -1132,7 +1160,11 @@
       saveBtn.innerText = "Saqlanmoqda...";
 
       try {
+        const initData = tg?.initData || "";
+        const userId = tg?.initDataUnsafe?.user?.id || null;
         const payload = {
+          init_data: initData,
+          user_id: userId,
           solutions: Object.values(currentSolutions).map(s => ({
             question: s.question,
             explanation: s.explanation || "",
@@ -1142,7 +1174,10 @@
 
         const res = await fetch(`/api/analysis/${testId}/save`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Telegram-Init-Data": initData
+          },
           body: JSON.stringify(payload)
         });
         const data = await res.json();

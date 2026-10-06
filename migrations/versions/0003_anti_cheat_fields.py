@@ -21,10 +21,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    """Bazani oldinga surish."""
+    conn = op.get_bind()
+    insp = sa.inspect(conn)
+    existing_cols = {c["name"] for c in insp.get_columns("attempts")}
     with op.batch_alter_table('attempts', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('tab_switches_count', sa.Integer(), server_default='0', nullable=False))
-        batch_op.add_column(sa.Column('is_disqualified', sa.Boolean(), server_default='0', nullable=False))
+        if 'tab_switches_count' not in existing_cols:
+            batch_op.add_column(sa.Column('tab_switches_count', sa.Integer(), server_default='0', nullable=False))
+        if 'is_disqualified' not in existing_cols:
+            batch_op.add_column(sa.Column('is_disqualified', sa.Boolean(), server_default='0', nullable=False))
 
 
 def downgrade() -> None:

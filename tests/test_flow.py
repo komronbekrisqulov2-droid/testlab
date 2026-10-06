@@ -198,17 +198,30 @@ async def main() -> int:
         await session.commit()
 
     # ==================================================================
-    print("\n--- 6. Takroriy javob taqiqlanadi ---")
+    print("\n--- 6. Takroriy javob: mashq rejimi va qat'iy cheklov ---")
     async with session_factory() as session:
         assessment = AssessmentService(session)
         test = await CatalogService(session).find_for_solving("1")
         student = await UserRepository(session).get_by_telegram_id(200)
 
+        # 1. Mashq o'chirilgan holatda: takroriy urinish bloklanadi
+        test.allow_practice = False
+        await session.commit()
+
         await expect_error(
-            "bir marta qoidasi",
+            "bir marta qoidasi (mashq o'chiq)",
             assessment.submit(test, student, "abcdabcdab"),
             AlreadyAnsweredError,
         )
+
+        # 2. Mashq yoqilgan holatda (standart): takroriy urinish mashq sifatida qabul qilinadi
+        test.allow_practice = True
+        await session.commit()
+
+        practice_res = await assessment.submit(test, student, "abcdabcdab")
+        check("mashq sifatida belgilandi", practice_res.attempt.is_practice, True)
+        check("2-urinish", practice_res.attempt.attempt_number, 2)
+        await session.commit()
 
     # ==================================================================
     print("\n--- 7. Xato javoblar rad etiladi ---")

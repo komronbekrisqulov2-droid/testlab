@@ -186,7 +186,11 @@ async def view_explanation(
     await safe_edit(
         callback,
         text,
-        reply_markup=single_explanation_keyboard(test.id, callback_data.q_num),
+        reply_markup=single_explanation_keyboard(
+            test.id,
+            callback_data.q_num,
+            from_retake=bool(my_mistake or mistakes),
+        ),
     )
 
 

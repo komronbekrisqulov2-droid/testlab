@@ -827,6 +827,11 @@
       renderQuestion();
       renderMatrix();
       initWatermark();
+
+      if (testData.isPractice) {
+        const scoreInfo = testData.officialScore ? ` (Rasmiy: ${testData.officialScore.score}/${testData.officialScore.max_score})` : '';
+        showToast(`🏋️ <b>Mashq rejimi:</b> Siz bu testni topshirgansiz${scoreInfo}. 1-yechmingiz rasmiy natija hisoblanadi.`, 5000);
+      }
     }
 
     function updateMediaDisplay() {
@@ -1106,12 +1111,14 @@
               <button class="nav-btn primary" onclick="closeWebApp()" style="margin-top: 10px; width: 100%; padding: 14px;">Botga qaytish ↩️</button>
             `;
           } else {
+            const isPractice = !!data.is_practice;
             modalBox.innerHTML = `
-              <div style="font-size: 46px;">🎉</div>
-              <h3 style="color: var(--success);">Test muvaffaqiyatli topshirildi!</h3>
+              <div style="font-size: 46px;">${isPractice ? '🏋️' : '🎉'}</div>
+              <h3 style="color: ${isPractice ? '#60a5fa' : 'var(--success)'};">${isPractice ? `Mashq yakunlandi (${data.attempt_number || 2}-urinish)` : 'Test muvaffaqiyatli topshirildi!'}</h3>
               <div style="background: rgba(255,255,255,0.05); padding: 16px; border-radius: 14px; margin: 10px 0; text-align: left; font-size: 15px; line-height: 1.7;">
                 📊 Natija: <b>${data.score} / ${data.total}</b> (${data.percentage}%)<br>
                 ${data.passed ? '✅ <b>Tabriklaymiz, muvaffaqiyatli o‘tdingiz!</b>' : '⚠️ <i>O‘tish balliga yetmadi</i>'}
+                ${isPractice ? '<br><small style="color:var(--hint)">ℹ️ 1-yechmingiz rasmiy hisoblanadi. Bu mashq umumiy reytingga ta\'sir qilmaydi.</small>' : ''}
               </div>
               <p style="color: var(--hint); font-size: 13px;">To‘liq hisobot va ball bot chatiga yuborildi.</p>
               <button class="nav-btn primary" onclick="closeWebApp()" style="margin-top: 10px; width: 100%; padding: 14px;">Botga qaytish ↩️</button>

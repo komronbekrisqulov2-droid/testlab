@@ -162,6 +162,13 @@ def _write_title(
     sheet.row_dimensions[2].height = 16
 
 
+def _sanitize_cell_value(val: Any) -> Any:
+    """Excel formula inyeksiyasidan (CWE-1236) himoya: agar matn '=' bilan boshlansa apostrof qo'shiladi."""
+    if isinstance(val, str) and val.startswith("="):
+        return f"'{val}"
+    return val
+
+
 def _write_row(
     sheet: Worksheet,
     columns: tuple[Column, ...],
@@ -174,7 +181,7 @@ def _write_row(
 ) -> None:
     """Bitta qatorni yozadi."""
     for index, value in enumerate(values, start=1):
-        cell = sheet.cell(row=row, column=index, value=value)
+        cell = sheet.cell(row=row, column=index, value=_sanitize_cell_value(value))
         cell.font = MONO_FONT if index == mono_index else CELL_FONT
         cell.alignment = columns[index - 1].align
         cell.border = BORDER

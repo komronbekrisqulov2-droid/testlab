@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
 from core.datetime_utils import utcnow
@@ -74,9 +74,11 @@ class AttemptRepository(BaseRepository[Attempt]):
         result = await self.session.execute(statement)
         return list(result.scalars().all())
 
-    async def count_by_user_and_test(self, user_id: int, test_id: int) -> int:
+    async def count_by_user_and_test(
+        self, user_id: int, test_id: int, *, official_only: bool = False
+    ) -> int:
         """Foydalanuvchi bu testga necha marta javob bergan."""
-        total = await self.session.scalar(
+        query = (
             select(func.count())
             .select_from(Attempt)
             .where(
@@ -85,26 +87,49 @@ class AttemptRepository(BaseRepository[Attempt]):
                 Attempt.status.in_(FINISHED_STATUSES),
             )
         )
+        if official_only:
+            query = query.where(or_(Attempt.is_practice == False, Attempt.is_practice.is_(None)))
+        total = await self.session.scalar(query)
         return int(total or 0)
 
-    async def count_finished_by_test(self, test_id: int) -> int:
-        total = await self.session.scalar(
+    async def get_first_completed(self, user_id: int, test_id: int) -> Attempt | None:
+        """Foydalanuvchining 1-rasmiy urinishini qaytaradi."""
+        statement = (
+            select(Attempt)
+            .where(
+                Attempt.user_id == user_id,
+                Attempt.test_id == test_id,
+                Attempt.status.in_(FINISHED_STATUSES),
+                or_(Attempt.is_practice == False, Attempt.is_practice.is_(None)),
+            )
+            .order_by(Attempt.id.asc())
+        )
+        result = await self.session.execute(statement)
+        return result.scalars().first()
+
+    async def count_finished_by_test(self, test_id: int, *, official_only: bool = True) -> int:
+        query = (
             select(func.count())
             .select_from(Attempt)
             .where(Attempt.test_id == test_id, Attempt.status.in_(FINISHED_STATUSES))
         )
+        if official_only:
+            query = query.where(or_(Attempt.is_practice == False, Attempt.is_practice.is_(None)))
+        total = await self.session.scalar(query)
         return int(total or 0)
 
     # ------------------------------------------------------------------
     #  Ro'yxatlar
     # ------------------------------------------------------------------
 
-    def _by_test_statement(self, test_id: int, *, by_rank: bool):
+    def _by_test_statement(self, test_id: int, *, by_rank: bool, official_only: bool = True):
         statement = (
             select(Attempt)
             .where(Attempt.test_id == test_id, Attempt.status.in_(FINISHED_STATUSES))
             .options(selectinload(Attempt.user))
         )
+        if official_only:
+            statement = statement.where(or_(Attempt.is_practice == False, Attempt.is_practice.is_(None)))
 
         if by_rank:
             #  Teng foizda tezroq yechgan oldinda
@@ -123,6 +148,7 @@ class AttemptRepository(BaseRepository[Attempt]):
         page: int = 1,
         per_page: int = 10,
         by_rank: bool = True,
+        official_only: bool = True,
     ) -> Page[Attempt]:
         """
         Testni yechganlar ro'yxati.
@@ -131,15 +157,15 @@ class AttemptRepository(BaseRepository[Attempt]):
         `by_rank=False` — vaqt bo'yicha, oxirgisi birinchi (tarix).
         """
         return await self.paginate(
-            self._by_test_statement(test_id, by_rank=by_rank),
+            self._by_test_statement(test_id, by_rank=by_rank, official_only=official_only),
             page=page,
             per_page=per_page,
         )
 
-    async def list_all_by_test(self, test_id: int) -> list[Attempt]:
+    async def list_all_by_test(self, test_id: int, *, official_only: bool = True) -> list[Attempt]:
         """Excel hisoboti uchun — sahifalashsiz, reyting tartibida."""
         result = await self.session.execute(
-            self._by_test_statement(test_id, by_rank=True)
+            self._by_test_statement(test_id, by_rank=True, official_only=official_only)
         )
         return list(result.scalars().all())
 
@@ -206,15 +232,22 @@ class AttemptRepository(BaseRepository[Attempt]):
         Returns:
             (o'rin, jami ishtirokchilar)
         """
-        total = await self.count_finished_by_test(attempt.test_id)
+        total = await self.count_finished_by_test(attempt.test_id, official_only=True)
+
+        target = attempt
+        if attempt.is_practice:
+            first = await self.get_first_completed(attempt.user_id, attempt.test_id)
+            if first is not None:
+                target = first
 
         better = await self.session.scalar(
             select(func.count())
             .select_from(Attempt)
             .where(
-                Attempt.test_id == attempt.test_id,
+                Attempt.test_id == target.test_id,
                 Attempt.status.in_(FINISHED_STATUSES),
-                Attempt.percentage > attempt.percentage,
+                or_(Attempt.is_practice == False, Attempt.is_practice.is_(None)),
+                Attempt.percentage > target.percentage,
             )
         )
         return int(better or 0) + 1, total
@@ -222,7 +255,7 @@ class AttemptRepository(BaseRepository[Attempt]):
     async def leaderboard(self, test_id: int, limit: int = 10) -> list[Attempt]:
         """Test bo'yicha eng yaxshi natijalar."""
         result = await self.session.execute(
-            self._by_test_statement(test_id, by_rank=True).limit(limit)
+            self._by_test_statement(test_id, by_rank=True, official_only=True).limit(limit)
         )
         return list(result.scalars().all())
 
@@ -242,6 +275,7 @@ class AttemptRepository(BaseRepository[Attempt]):
             .where(
                 Attempt.user_id == user_id,
                 Attempt.status.in_(FINISHED_STATUSES),
+                or_(Attempt.is_practice == False, Attempt.is_practice.is_(None)),
             )
             .order_by(Attempt.finished_at.desc())
             .limit(limit)
@@ -255,6 +289,7 @@ class AttemptRepository(BaseRepository[Attempt]):
         base = (
             Attempt.user_id == user_id,
             Attempt.status.in_(FINISHED_STATUSES),
+            or_(Attempt.is_practice == False, Attempt.is_practice.is_(None)),
         )
 
         total = await self.session.scalar(
