@@ -205,12 +205,11 @@ class DatabaseSettings(BaseSettings):
 
     @field_validator("url")
     @classmethod
-    def _absolute_sqlite_path(cls, value: str) -> str:
+    def _normalize_database_url(cls, value: str) -> str:
         """
-        SQLite uchun nisbiy yo'lni absolyutga aylantiradi.
-
-        Busiz bot qaysi katalogdan ishga tushirilishiga qarab boshqa-boshqa
-        baza fayllarini yaratardi.
+        1. SQLite uchun nisbiy yo'lni absolyutga aylantiradi.
+        2. Render / Neon / Supabase bergan postgres:// yoki postgresql://
+           ni asyncpg drayveriga (postgresql+asyncpg://) avtomatik moslaydi.
         """
         prefix = "sqlite+aiosqlite:///"
 
@@ -220,6 +219,11 @@ class DatabaseSettings(BaseSettings):
             absolute = (BASE_DIR / relative).resolve()
             absolute.parent.mkdir(parents=True, exist_ok=True)
             return f"{prefix}{absolute.as_posix()}"
+
+        if value.startswith("postgres://"):
+            return value.replace("postgres://", "postgresql+asyncpg://", 1)
+        if value.startswith("postgresql://") and "+asyncpg" not in value:
+            return value.replace("postgresql://", "postgresql+asyncpg://", 1)
 
         return value
 
