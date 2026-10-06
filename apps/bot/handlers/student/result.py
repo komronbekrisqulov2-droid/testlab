@@ -64,9 +64,7 @@ async def send_result(
     certificates = CertificateService(session)
     can_certify, _ = await certificates.can_issue(submit.attempt, submit.test)
 
-    hide_keys = not submit.test.show_answers or (
-        submit.test.ends_at is not None and not submit.test.already_ended
-    )
+    hide_keys = submit.test.should_hide_answers
 
     caption = uz.result(submit, hide_keys=hide_keys)
     keyboard = result_keyboard(
@@ -323,7 +321,7 @@ async def view_attempt_analysis(
         return
 
     test = attempt.test
-    if test and (not test.show_answers or (test.ends_at is not None and not test.already_ended)):
+    if test and test.should_hide_answers:
         from core.datetime_utils import fmt_datetime
         msg = "🔒 Ushbu test hali yakunlanmagan. To'g'ri kalitlar va savollar tahlili "
         if test.ends_at:

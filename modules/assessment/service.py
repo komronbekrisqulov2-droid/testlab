@@ -521,7 +521,8 @@ class AssessmentService:
 
         stmt = stmt.options(selectinload(StudentMistake.test)).order_by(StudentMistake.created_at.desc())
         res = await self.session.execute(stmt)
-        return list(res.scalars().all())
+        items = list(res.scalars().all())
+        return [m for m in items if not (m.test and m.test.should_hide_answers)]
 
     async def count_mistakes(self, user_id: int, test_id: int | None = None) -> int:
         """Hal qilinmagan xatolar soni."""

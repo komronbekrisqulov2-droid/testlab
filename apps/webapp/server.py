@@ -397,13 +397,13 @@ async def handle_api_submit(request: web.Request) -> web.Response:
                     certificates = CertificateService(session)
                     can_certify, _ = await certificates.can_issue(submit.attempt, submit.test)
 
-                    # Agar test muddati hali o'tmagan bo'lsa yoki show_answers False bo'lsa kalitlar yashiriladi
-                    hide_keys = not test.show_answers or (test.ends_at is not None and not test.already_ended)
+                    hide_keys = test.should_hide_answers
 
                     kb = result_keyboard(
                         submit.test.id,
                         attempt_id=submit.attempt.id,
                         can_get_certificate=can_certify,
+                        hide_analysis=hide_keys,
                     )
                     await bot.send_message(
                         chat_id=user.telegram_id,

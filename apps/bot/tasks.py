@@ -148,6 +148,7 @@ async def apply_test_schedule(bot: Bot) -> None:
                 targets.append((author.telegram_id, text))
 
             # Kanal/Guruhga avtomatik yakuniy natijalarni (Top-10) chiqarish
+            student_posts: list[tuple[int, str, int, int, int, int, float]] = []
             for test in closed:
                 if test.channel_id and not test.results_posted_at:
                     page = await attempt_repo.list_by_test(test.id, page=1, per_page=10, by_rank=True)
@@ -155,6 +156,23 @@ async def apply_test_schedule(bot: Bot) -> None:
                     leaderboard_text = uz.channel_leaderboard(test, page.items, total)
                     channel_posts.append((test.id, test.number, test.channel_id, test.channel_message_id, leaderboard_text))
                     test.results_posted_at = utcnow()
+
+                if not test.show_answers:
+                    attempts = await attempt_repo.list_all_by_test(test.id, official_only=False)
+                    seen_students: set[int] = set()
+                    for att in attempts:
+                        if att.user and att.user.telegram_id and att.user.notifications_enabled and not att.user.is_banned:
+                            if att.user_id not in seen_students:
+                                seen_students.add(att.user_id)
+                                student_posts.append((
+                                    att.user.telegram_id,
+                                    test.title,
+                                    test.number,
+                                    att.id,
+                                    att.score,
+                                    att.max_score,
+                                    att.percentage,
+                                ))
 
             if channel_posts:
                 await session.commit()
@@ -184,6 +202,32 @@ async def apply_test_schedule(bot: Bot) -> None:
         except Exception as err:
             log.warning("Kanalga avtomatik natija e'lon qilishda xatolik (%s): %s", channel_id, err)
         await asyncio.sleep(NOTIFY_DELAY_SEC)
+
+    for tg_id, title, num, att_id, score, max_score, pct in student_posts:
+        try:
+            from apps.bot.keyboards.callbacks import AttemptCB
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text="🔍 Natija va xatolarni ko'rish",
+                        callback_data=AttemptCB(action="view", attempt_id=att_id, page=1).pack(),
+                    )
+                ]]
+            )
+            msg_text = (
+                f"📢 <b>Test yakunlandi!</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"📝 Test: <b>{uz.escape(title)}</b> (№{num})\n\n"
+                f"🔓 <b>To'g'ri kalitlar va savollar tahlili ochildi!</b>\n"
+                f"Siz to'plagan natija: <b>{score}/{max_score} ({pct:g}%)</b>\n\n"
+                f"<i>Quyidagi tugma orqali to'liq yechimlar va xatolaringizni ko'rishingiz mumkin:</i>"
+            )
+            await bot.send_message(tg_id, msg_text, reply_markup=kb)
+            await asyncio.sleep(NOTIFY_DELAY_SEC)
+        except Exception:
+            continue
 
 
 

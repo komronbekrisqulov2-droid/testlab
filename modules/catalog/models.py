@@ -372,6 +372,23 @@ class Test(Base, IntPK, TimestampMixin):
             and not self.already_ended
         )
 
+    @property
+    def should_hide_answers(self) -> bool:
+        """
+        O'quvchiga to'g'ri kalitlar va xatolar ko'rsatilmasligi kerakmi?
+
+        - Agar show_answers=False bo'lsa (monitoring / imtihon rejimi):
+          Test ochiq (faol) ekan, kalitlar sir saqlanadi (True).
+          Test yopilgach (arxivlanganda yoki muddati tugagach), kalitlar ochiladi (False)!
+        - Agar show_answers=True bo'lsa (darhol ko'rsatish):
+          Faqat ends_at bo'lsa va hali muddati o'tmagan bo'lsa yashiriladi.
+        """
+        if not self.show_answers:
+            return self.is_open
+        if self.ends_at is not None and not self.already_ended:
+            return True
+        return False
+
     def closed_reason(self) -> str | None:
         """Yechib bo'lmasa — sababi (o'zbekcha matn)."""
         if self.is_draft:

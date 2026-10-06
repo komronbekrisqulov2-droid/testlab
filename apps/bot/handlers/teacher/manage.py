@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from aiogram import F, Router
+import asyncio
+
+from aiogram import Bot, F, Router
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (
@@ -158,6 +160,58 @@ async def manage_test(
     )
 
 
+async def _notify_participants_test_closed(
+    bot: Bot,
+    test: Test,
+    session: AsyncSession,
+) -> int:
+    """Monitoring testi yopilganda qatnashuvchilarga to'liq kalitlar ochilgani haqida xabar berish."""
+    from apps.bot.keyboards.callbacks import AttemptCB
+
+    try:
+        attempts_repo = AttemptRepository(session)
+        attempts = await attempts_repo.list_all_by_test(test.id, official_only=False)
+        if not attempts:
+            return 0
+
+        user_attempts: dict[int, Any] = {}
+        for att in attempts:
+            if att.user and att.user.telegram_id and att.user.notifications_enabled and not att.user.is_banned:
+                if att.user_id not in user_attempts:
+                    user_attempts[att.user_id] = att
+
+        notified = 0
+        for att in user_attempts.values():
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text="🔍 Natija va xatolarni ko'rish",
+                        callback_data=AttemptCB(action="view", attempt_id=att.id, page=1).pack(),
+                    )
+                ]]
+            )
+            text = (
+                f"📢 <b>Test yakunlandi!</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"📝 Test: <b>{uz.escape(test.title)}</b> (№{test.number})\n"
+                f"👤 Test muallifi: {uz.escape(test.author_name)}\n\n"
+                f"🔓 <b>To'g'ri kalitlar va savollar tahlili ochildi!</b>\n"
+                f"Siz to'plagan natija: <b>{att.score}/{att.max_score} ({att.percentage:g}%)</b>\n\n"
+                f"<i>Quyidagi tugma orqali to'liq yechimlar va xatolaringizni ko'rishingiz mumkin:</i>"
+            )
+            try:
+                await bot.send_message(att.user.telegram_id, text, reply_markup=kb)
+                notified += 1
+                await asyncio.sleep(0.05)
+            except Exception:
+                continue
+
+        return notified
+    except Exception as err:
+        log.warning("Test yopilgani haqida o'quvchilarga xabar yetkazishda xato: %s", err)
+        return 0
+
+
 @router.callback_query(TestCB.filter(F.action.in_({"publish", "archive"})))
 async def change_status(
     callback: CallbackQuery,
@@ -179,12 +233,50 @@ async def change_status(
             await safe_answer(callback, "🟢 E'lon qilindi")
         else:
             await catalog.archive(test, user)
-            await safe_answer(callback, "📦 Arxivlandi")
+            await safe_answer(callback, "📦 Arxivlandi (Yopildi)")
+            if not test.show_answers and callback.bot:
+                asyncio.create_task(_notify_participants_test_closed(callback.bot, test, session))
     except TestLabError as error:
         await safe_answer(callback, error.user_text()[:200], alert=True)
         return
 
     await manage_test(callback, callback_data, user, session)
+
+
+@router.callback_query(TestCB.filter(F.action == "toggle_answers"))
+async def toggle_answers_visibility(
+    callback: CallbackQuery,
+    callback_data: TestCB,
+    user: User,
+    session: AsyncSession,
+) -> None:
+    """O'quvchilarga kalitlarni darhol yoki test yopilgach ko'rsatish rejimini almashtirish."""
+    test = await _load_owned(session, callback_data.test_id, user)
+    if test is None:
+        await safe_answer(callback, uz.NO_PERMISSION, alert=True)
+        return
+
+    test.show_answers = not test.show_answers
+    await session.commit()
+
+    if test.show_answers:
+        alert_text = (
+            "🔓 Ochiq rejim yoqildi!\n\n"
+            "O'quvchilar testni yechishi bilanoq to'g'ri kalitlar va to'liq tahlilni ko'rishadi."
+        )
+    else:
+        alert_text = (
+            "🔒 Monitoring / Imtihon rejimi yoqildi!\n\n"
+            "O'quvchilar testni yechganda faqat ball va foiz ko'rsatiladi. "
+            "To'g'ri kalitlar va savollar tahlili test yopilgandan keyin ochiladi."
+        )
+
+    await safe_answer(callback, alert_text, alert=True)
+
+    if callback.message and "TEST TAYMERI" in (callback.message.text or ""):
+        await open_timer_menu(callback, callback_data, user, session)
+    else:
+        await manage_test(callback, callback_data, user, session)
 
 
 @router.callback_query(TestCB.filter(F.action == "timer_menu"))
@@ -241,6 +333,8 @@ async def toggle_test_status(
     if test.is_published:
         await catalog.tests.archive(test)
         await safe_answer(callback, "🔴 Test yopildi (qulflandi). O'quvchilar yechishi to'xtatildi.", alert=True)
+        if not test.show_answers and callback.bot:
+            asyncio.create_task(_notify_participants_test_closed(callback.bot, test, session))
     else:
         await catalog.tests.publish(test)
         await safe_answer(callback, "🟢 Test ochildi (faollashtirildi). Endi yechish mumkin!", alert=True)

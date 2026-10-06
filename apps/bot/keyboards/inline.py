@@ -493,6 +493,14 @@ def test_manage_keyboard(test: Test) -> InlineKeyboardMarkup:
         )
     )
 
+    ans_text = "🔓 Kalitlar: Darhol ko'rsatish 🟢" if test.show_answers else "🔒 Kalitlar: Test yopilgach 🔴"
+    builder.row(
+        InlineKeyboardButton(
+            text=ans_text,
+            callback_data=TestCB(action="toggle_answers", test_id=test.id).pack(),
+        )
+    )
+
     builder.row(
         InlineKeyboardButton(
             text=uz.BTN_PARTICIPANTS,
@@ -627,6 +635,14 @@ def timer_select_keyboard(test: Test) -> InlineKeyboardMarkup:
                 callback_data=TestCB(action="toggle_status", test_id=test.id).pack(),
             )
         )
+
+    ans_label = "🔓 Kalitlar: Darhol ko'rsatish 🟢" if test.show_answers else "🔒 Kalitlar: Test yopilgach 🔴"
+    builder.row(
+        InlineKeyboardButton(
+            text=ans_label,
+            callback_data=TestCB(action="toggle_answers", test_id=test.id).pack(),
+        )
+    )
 
     # 2. Avtomatik jadval (Starts at / Ends at)
     from core.datetime_utils import fmt_datetime

@@ -117,11 +117,33 @@ async def main() -> None:
         await session.commit()
         await session.refresh(test)
         assert test.already_ended is True
-        hide_after = not test.show_answers or (test.ends_at is not None and not test.already_ended)
-        assert hide_after is False
-        res_after = uz.result(submit1, hide_keys=hide_after)
+        assert test.should_hide_answers is False
+        res_after = uz.result(submit1, hide_keys=test.should_hide_answers)
         assert "🛡 <b>Anti-Cheat Himoyasi:</b>" not in res_after
         print("  OK   Muddat tugagach to'liq tahlil ochildi")
+
+        # 5. Monitoring / Imtihon rejimi (show_answers=False, ends_at yo'q)
+        test2 = await catalog.create_from_one_line(teacher, f"Tarix Test+{KEY}")
+        test2.show_answers = False
+        await session.commit()
+        await session.refresh(test2)
+
+        # Test ochiq bo'lsa kalitlar yashirin bo'lishi shart
+        assert test2.is_open is True
+        assert test2.should_hide_answers is True
+        submit3 = await assessment.submit(test2, student1, KEY)
+        res_monitoring = uz.result(submit3, hide_keys=test2.should_hide_answers)
+        assert "🛡 <b>Anti-Cheat Himoyasi:</b>" in res_monitoring
+        print("  OK   Monitoring rejimida (ochiq testda) kalitlar to'liq yashirildi")
+
+        # O'qituvchi testni yopganda (arxivlaganda) kalitlar ochilishi shart
+        await catalog.archive(test2, teacher)
+        await session.refresh(test2)
+        assert test2.is_open is False
+        assert test2.should_hide_answers is False
+        res_unlocked = uz.result(submit3, hide_keys=test2.should_hide_answers)
+        assert "🛡 <b>Anti-Cheat Himoyasi:</b>" not in res_unlocked
+        print("  OK   O'qituvchi testni yopgach (arxivlagach) kalitlar avtomatik ochildi")
 
     print("\n  BARCHA ANTI-CHEAT VA MUDDATLI KALIT SINOVLARI MUVAFFAQIYATLI O'TDI!")
 

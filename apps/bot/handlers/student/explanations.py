@@ -69,7 +69,7 @@ async def list_explanations(
             )
             return
 
-        if not test.show_answers or (test.ends_at is not None and not test.already_ended):
+        if test.should_hide_answers:
             from core.datetime_utils import fmt_datetime
 
             msg = "🔒 Ushbu test hali yakunlanmagan. To'liq yechimlar va tushuntirishlar "
@@ -124,7 +124,7 @@ async def view_explanation(
             )
             return
 
-        if not test.show_answers or (test.ends_at is not None and not test.already_ended):
+        if test.should_hide_answers:
             from core.datetime_utils import fmt_datetime
 
             msg = "🔒 Ushbu test hali yakunlanmagan. To'liq yechimlar va tushuntirishlar "
