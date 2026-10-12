@@ -1,0 +1,39 @@
+# Git
+.git
+.gitignore
+
+# Maxfiy ma'lumotlar
+.env
+*.pem
+*.key
+
+# Python va virtual muhit
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*.so
+
+# Testlar va vaqtinchalik ma'lumotlar
+.pytest_cache/
+tests/*.db
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Ma'lumotlar bazasi va loglar (Docker volume orqali ulanadi)
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+logs/*.log
+exports/*
+
+# IDE va OT fayllari
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
